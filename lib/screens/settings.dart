@@ -4,6 +4,7 @@ import 'package:where_ma_money_go/blocs/category/category_bloc.dart';
 import 'package:where_ma_money_go/blocs/category/category_event.dart';
 import 'package:where_ma_money_go/providers/theme/app_colors.dart';
 import 'package:where_ma_money_go/providers/theme/theme_provider.dart';
+import 'package:where_ma_money_go/screens/saving_plan.dart';
 import 'package:where_ma_money_go/widgets/categories/section.dart';
 import 'package:where_ma_money_go/widgets/settings/header.dart';
 import 'package:where_ma_money_go/widgets/settings/section.dart';
@@ -43,7 +44,7 @@ class SettingsScreen extends StatelessWidget {
                   children: [
                     const SizedBox(height: 8),
                     SettingsSection(
-                      title: 'Categorías',
+                      title: 'General',
                       children: [
                         SettingsTile(
                           icon: Icons.category,
@@ -59,6 +60,19 @@ class SettingsScreen extends StatelessWidget {
                               ),
                             );
                           },
+                        ),
+
+                        SettingsTile(
+                          icon: Icons.monetization_on,
+                          label: 'Plan de Ahorro',
+                          onTap: () => Navigator.push(
+                            context,
+                            PageRouteBuilder(
+                              pageBuilder:
+                                  (context, animation, secondaryAnimation) =>
+                                      SavingPlan(),
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -115,7 +129,7 @@ class SettingsScreen extends StatelessWidget {
                         SettingsTile(
                           icon: Icons.privacy_tip_outlined,
                           label: 'Política de privacidad',
-                          onTap: () {},
+                          onTap: () => _openNotSupported(context),
                         ),
                       ],
                     ),

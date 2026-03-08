@@ -4,16 +4,18 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:where_ma_money_go/models/category.dart';
 
 class CategoryRepository {
-  final FirebaseFirestore firestore = FirebaseFirestore.instance;
-  final String uid = FirebaseAuth.instance.currentUser!.uid;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  CollectionReference<Map<String, dynamic>> get _categories {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw Exception('Usuario no autenticado');
+    return _firestore.collection('users').doc(uid).collection('categories');
+  }
 
   Future<List<Categories>> getCategories() async {
     try {
-      final snapshot = await firestore
-          .collection('users')
-          .doc(uid)
-          .collection('categories')
-          .get();
+      final snapshot = await _categories.orderBy('name').get();
       return snapshot.docs.map((doc) => Categories.fromMap(doc)).toList();
     } catch (e) {
       throw Exception('Failed to load categories: $e');
@@ -22,11 +24,7 @@ class CategoryRepository {
 
   Future<void> addCategory(Categories category) async {
     try {
-      await firestore
-          .collection('users')
-          .doc(uid)
-          .collection('categories')
-          .add(category.toMap());
+      await _categories.add(category.toMap());
     } catch (e) {
       throw Exception('Failed to add category: $e');
     }
@@ -34,12 +32,7 @@ class CategoryRepository {
 
   Future<void> updateCategory(Categories category) async {
     try {
-      await firestore
-          .collection('users')
-          .doc(uid)
-          .collection('categories')
-          .doc(category.id)
-          .update(category.toMap());
+      await _categories.doc(category.id).update(category.toMap());
     } catch (e) {
       throw Exception('Failed to update category: $e');
     }
@@ -47,12 +40,7 @@ class CategoryRepository {
 
   Future<void> deleteCategory(String categoryId) async {
     try {
-      await firestore
-          .collection('users')
-          .doc(uid)
-          .collection('categories')
-          .doc(categoryId)
-          .delete();
+      await _categories.doc(categoryId).delete();
     } catch (e) {
       throw Exception('Failed to delete category: $e');
     }

@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:where_ma_money_go/models/subcategory.dart';
 import 'package:where_ma_money_go/models/category.dart';
 
@@ -8,7 +8,7 @@ class Bill {
   final double amount;
   DateTime? date;
   String? month;
-  final String id;
+  String? id;
   final String type;
   final String cashFlow;
 
@@ -18,7 +18,7 @@ class Bill {
     required this.amount,
     DateTime? date,
     String? month,
-    required this.id,
+    this.id,
     required this.type,
     required this.cashFlow,
   }) : date = date ?? DateTime.now(),
@@ -37,16 +37,20 @@ class Bill {
     };
   }
 
-  factory Bill.fromMap(Map<String, dynamic> map) {
+  factory Bill.fromMap(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final map = doc.data();
     return Bill(
-      category: Categories.fromMap(map['category']),
-      subcategory: Subcategory.fromMap(map['subcategory']),
-      amount: map['amount'],
-      date: DateTime.parse(map['date']),
-      month: map['month'],
-      id: map['id'],
-      type: map['type'],
-      cashFlow: map['cashFlow'],
+      // Usar fromMapData porque 'category' es un Map embebido, no un documento
+      category: Categories.fromMapData(map['category'] as Map<String, dynamic>),
+      subcategory: Subcategory.fromMap(
+        map['subcategory'] as Map<String, dynamic>,
+      ),
+      amount: (map['amount'] as num).toDouble(),
+      date: DateTime.parse(map['date'] as String),
+      month: map['month'] as String?,
+      id: doc.id,
+      type: map['type'] as String,
+      cashFlow: map['cashFlow'] as String,
     );
   }
 }
