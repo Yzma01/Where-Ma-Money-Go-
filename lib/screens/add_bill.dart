@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
@@ -6,8 +7,12 @@ import 'package:where_ma_money_go/blocs/bills/bills_event.dart';
 import 'package:where_ma_money_go/blocs/category/category_bloc.dart';
 import 'package:where_ma_money_go/blocs/category/category_event.dart';
 import 'package:where_ma_money_go/blocs/category/category_state.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_bloc.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_event.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_state.dart';
 import 'package:where_ma_money_go/models/bill.dart';
 import 'package:where_ma_money_go/models/category.dart';
+import 'package:where_ma_money_go/models/saving.dart';
 import 'package:where_ma_money_go/models/subcategory.dart';
 import 'package:where_ma_money_go/providers/theme/app_colors.dart';
 import 'package:where_ma_money_go/providers/theme/theme_provider.dart';
@@ -23,17 +28,22 @@ class _AddBillScreenState extends State<AddBillScreen> {
   final _amountController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
-  String _cashFlow = 'expense'; // 'expense' | 'income'
-  String _type = 'variable'; // 'variable' | 'fixed'
+  String _cashFlow = 'expense';
+  String _type = 'variable';
   Categories? _selectedCategory;
   Subcategory? _selectedSubcategory;
+  Saving? _selectedSaving;
   DateTime _selectedDate = DateTime.now();
+
+  bool get _isAhorro =>
+      _selectedCategory != null &&
+      _selectedCategory!.name.toLowerCase().contains('ahorro');
 
   @override
   void initState() {
     super.initState();
-    final state = context.read<CategoryBloc>().state;
-    if (state is! CategoryLoaded) {
+    final catState = context.read<CategoryBloc>().state;
+    if (catState is! CategoryLoaded) {
       context.read<CategoryBloc>().add(LoadCategories());
     }
   }
@@ -74,16 +84,20 @@ class _AddBillScreenState extends State<AddBillScreen> {
       _showError('Selecciona una categoría');
       return;
     }
-    if (_subcategories.isNotEmpty && _selectedSubcategory == null) {
+    if (_subcategories.isNotEmpty &&
+        _selectedSubcategory == null &&
+        !_isAhorro) {
       _showError('Selecciona una subcategoría');
       return;
     }
+
+    final amount = double.parse(_amountController.text.replaceAll(',', '.'));
 
     final bill = Bill(
       category: _selectedCategory!,
       subcategory:
           _selectedSubcategory ?? Subcategory(name: _selectedCategory!.name),
-      amount: double.parse(_amountController.text.replaceAll(',', '.')),
+      amount: amount,
       date: _selectedDate,
       month: _selectedDate.month.toString(),
       type: _type,
@@ -91,6 +105,26 @@ class _AddBillScreenState extends State<AddBillScreen> {
     );
 
     context.read<BillsBloc>().add(AddBill(bill: bill));
+
+    // Si la categoría es ahorro y hay una meta seleccionada,
+    // actualizar su currentAmount.
+    // Egreso = el usuario aparta dinero → SUMA al ahorro.
+    // Ingreso = el usuario retira del ahorro → RESTA del ahorro.
+    if (_isAhorro && _selectedSaving != null) {
+      final s = _selectedSaving!;
+      final delta = _cashFlow == 'expense' ? -amount : amount;
+      final newAmount = (s.currentAmount + delta).clamp(0.0, double.infinity);
+      final updated = Saving(
+        id: s.id,
+        name: s.name,
+        goalAmount: s.goalAmount,
+        currentAmount: newAmount,
+        dueDate: s.dueDate,
+        isCompleted: newAmount >= s.goalAmount,
+      );
+      context.read<SavingBloc>().add(UpdateSaving(saving: updated));
+    }
+
     Navigator.pop(context);
   }
 
@@ -124,7 +158,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // ── Tipo de flujo (egreso / ingreso)
+                      // ── Egreso / Ingreso
                       _CashFlowToggle(
                         colors: colors,
                         value: _cashFlow,
@@ -152,7 +186,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
                       ),
                       const SizedBox(height: 24),
 
-                      // ── Tipo (variable / fijo)
+                      // ── Tipo
                       _SectionLabel(text: 'TIPO', colors: colors),
                       const SizedBox(height: 10),
                       _SegmentedPicker(
@@ -166,7 +200,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
                       ),
                       const SizedBox(height: 24),
 
-                      // ── Categoría desde BLoC
+                      // ── Categoría
                       _SectionLabel(text: 'CATEGORÍA', colors: colors),
                       const SizedBox(height: 10),
                       BlocBuilder<CategoryBloc, CategoryState>(
@@ -200,6 +234,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
                                 onTap: () => setState(() {
                                   _selectedCategory = cat;
                                   _selectedSubcategory = null;
+                                  _selectedSaving = null;
                                 }),
                               );
                             }).toList(),
@@ -207,9 +242,10 @@ class _AddBillScreenState extends State<AddBillScreen> {
                         },
                       ),
 
-                      // ── Subcategoría (condicional)
+                      // ── Subcategoría (solo si NO es ahorro)
                       if (_selectedCategory != null &&
-                          _subcategories.isNotEmpty) ...[
+                          _subcategories.isNotEmpty &&
+                          !_isAhorro) ...[
                         const SizedBox(height: 24),
                         _SectionLabel(text: 'SUBCATEGORÍA', colors: colors),
                         const SizedBox(height: 10),
@@ -229,6 +265,87 @@ class _AddBillScreenState extends State<AddBillScreen> {
                                   setState(() => _selectedSubcategory = sub),
                             );
                           }).toList(),
+                        ),
+                      ],
+
+                      // ── Metas de ahorro (solo si categoría es ahorro)
+                      if (_isAhorro) ...[
+                        const SizedBox(height: 24),
+                        _SectionLabel(text: 'META DE AHORRO', colors: colors),
+                        const SizedBox(height: 10),
+                        BlocBuilder<SavingBloc, SavingState>(
+                          builder: (context, state) {
+                            if (state is SavingLoading) {
+                              return Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: colors.primary,
+                                  ),
+                                ),
+                              );
+                            }
+
+                            final activeSavings = state is SavingLoaded
+                                ? state.savings
+                                      .where((s) => !s.isCompleted)
+                                      .toList()
+                                : <Saving>[];
+
+                            if (activeSavings.isEmpty) {
+                              return Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: colors.surface,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: colors.border,
+                                    width: 0.5,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline_rounded,
+                                      size: 14,
+                                      color: colors.textSecondary,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'No hay metas activas',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: colors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            return Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: activeSavings.map((s) {
+                                final progress = s.goalAmount > 0
+                                    ? (s.currentAmount / s.goalAmount).clamp(
+                                        0.0,
+                                        1.0,
+                                      )
+                                    : 0.0;
+                                final selected = _selectedSaving?.id == s.id;
+                                return _SavingChip(
+                                  saving: s,
+                                  progress: progress,
+                                  selected: selected,
+                                  colors: colors,
+                                  onTap: () =>
+                                      setState(() => _selectedSaving = s),
+                                );
+                              }).toList(),
+                            );
+                          },
                         ),
                       ],
 
@@ -271,6 +388,129 @@ class _AddBillScreenState extends State<AddBillScreen> {
       ),
     );
   }
+}
+
+// ─── Saving Chip ──────────────────────────────────────────────────────────────
+
+class _SavingChip extends StatelessWidget {
+  final Saving saving;
+  final double progress;
+  final bool selected;
+  final AppThemeColors colors;
+  final VoidCallback onTap;
+
+  const _SavingChip({
+    required this.saving,
+    required this.progress,
+    required this.selected,
+    required this.colors,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pct = '${(progress * 100).toStringAsFixed(0)}%';
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? colors.primary : colors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? colors.primary : colors.border,
+            width: selected ? 1.5 : 0.5,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Mini ring
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CustomPaint(
+                painter: _MiniRingPainter(
+                  progress: progress,
+                  color: selected ? Colors.white : colors.primary,
+                  trackColor: selected
+                      ? Colors.white.withOpacity(0.3)
+                      : colors.primary.withOpacity(0.2),
+                ),
+              ),
+            ),
+            const SizedBox(width: 7),
+            Text(
+              saving.name,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: selected ? Colors.white : colors.textPrimary,
+              ),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              pct,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: selected
+                    ? Colors.white.withOpacity(0.75)
+                    : colors.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniRingPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  final Color trackColor;
+
+  const _MiniRingPainter({
+    required this.progress,
+    required this.color,
+    required this.trackColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.width - 3) / 2;
+    const sw = 2.5;
+
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = trackColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = sw,
+    );
+
+    if (progress > 0) {
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        -math.pi / 2,
+        2 * math.pi * progress.clamp(0.0, 1.0),
+        false,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = sw
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_MiniRingPainter old) => old.progress != progress;
 }
 
 // ─── Top Bar ──────────────────────────────────────────────────────────────────
@@ -449,7 +689,7 @@ class _AmountField extends StatelessWidget {
           letterSpacing: -1.0,
           color: accentColor.withOpacity(0.3),
         ),
-        prefixText: '\₡ ',
+        prefixText: '\u20a1 ',
         prefixStyle: TextStyle(
           fontSize: 24,
           fontWeight: FontWeight.w700,

@@ -1,4 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:where_ma_money_go/blocs/bills/bills_event.dart';
+import 'package:where_ma_money_go/blocs/category/category_event.dart';
 import 'package:where_ma_money_go/providers/user/user_provider.dart';
 import 'package:where_ma_money_go/repositories/auth_repository.dart';
 import 'auth_event.dart';
@@ -17,6 +19,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<AuthSendVerificationEmail>(_onSendVerificationEmail);
     on<AuthCheckEmailVerified>(_onCheckEmailVerified);
     on<AuthSendPasswordReset>(_onSendPasswordReset);
+    on<AuthDeleteData>(_onDeleteData);
   }
 
   Future<void> _onCheckCurrentUser(
@@ -136,6 +139,19 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     try {
       await authRepository.sendPasswordReset(email: event.email);
       emit(AuthPasswordResetSent());
+    } catch (e) {
+      emit(AuthError(message: _parseError(e)));
+    }
+  }
+
+  Future<void> _onDeleteData(
+    AuthDeleteData event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(AuthLoading());
+    try {
+      await authRepository.deleteUserData();
+      emit(AuthDataDeleted());
     } catch (e) {
       emit(AuthError(message: _parseError(e)));
     }

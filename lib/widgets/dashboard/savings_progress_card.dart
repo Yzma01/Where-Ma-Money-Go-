@@ -4,18 +4,16 @@ import 'package:where_ma_money_go/providers/theme/app_colors.dart';
 
 class SavingsProgressCard extends StatefulWidget {
   final AppThemeColors colors;
-  final double savings; // depósitos al ahorro (expense con categoría ahorro)
-  final double withdrawals; // retiros del ahorro (income con categoría ahorro)
-  final double income;
-  final double? savingsGoalPercent;
+  final double currentAmount; // lo que ya ahorró
+  final double goalAmount; // la meta total
+  final String? name;
 
   const SavingsProgressCard({
     super.key,
     required this.colors,
-    required this.savings,
-    required this.withdrawals,
-    required this.income,
-    this.savingsGoalPercent,
+    required this.currentAmount,
+    required this.goalAmount,
+    this.name,
   });
 
   @override
@@ -44,9 +42,8 @@ class _SavingsProgressCardState extends State<SavingsProgressCard>
   @override
   void didUpdateWidget(SavingsProgressCard old) {
     super.didUpdateWidget(old);
-    if (old.savings != widget.savings ||
-        old.withdrawals != widget.withdrawals ||
-        old.income != widget.income) {
+    if (old.currentAmount != widget.currentAmount ||
+        old.goalAmount != widget.goalAmount) {
       _controller.forward(from: 0);
     }
   }
@@ -60,30 +57,27 @@ class _SavingsProgressCardState extends State<SavingsProgressCard>
   @override
   Widget build(BuildContext context) {
     final colors = widget.colors;
-    final goalPercent = widget.savingsGoalPercent ?? 20.0;
-    final goalAmount = widget.income * goalPercent / 100;
-    final net = widget.savings - widget.withdrawals; // puede ser negativo
-    final progress = goalAmount > 0 ? (net / goalAmount).clamp(-1.0, 1.0) : 0.0;
-    final isNegative = net < 0;
+
+    // progress va de 0.0 a 1.0 (o negativo si currentAmount < 0)
+    final progress = widget.goalAmount > 0
+        ? (widget.currentAmount / widget.goalAmount).clamp(-1.0, 1.0)
+        : 0.0;
+    final isNegative = widget.currentAmount < 0;
 
     Color progressColor;
-    Icon statusIcon;
+    IconData statusIconData;
     if (isNegative) {
       progressColor = colors.error;
-      statusIcon = Icon(Icons.trending_down, size: 12, color: colors.error);
+      statusIconData = Icons.trending_down;
     } else if (progress >= 1.0) {
       progressColor = colors.success;
-      statusIcon = Icon(Icons.trending_up, size: 12, color: colors.success);
+      statusIconData = Icons.trending_up;
     } else if (progress >= 0.6) {
       progressColor = colors.warning;
-      statusIcon = Icon(Icons.trending_flat, size: 12, color: colors.warning);
+      statusIconData = Icons.trending_flat;
     } else {
       progressColor = colors.primary;
-      statusIcon = Icon(
-        Icons.savings_outlined,
-        size: 12,
-        color: colors.primary,
-      );
+      statusIconData = Icons.savings_outlined;
     }
 
     return Container(
@@ -96,10 +90,10 @@ class _SavingsProgressCardState extends State<SavingsProgressCard>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Círculo de progreso + número
           AnimatedBuilder(
             animation: _animation,
             builder: (_, __) {
+              final animatedProgress = progress.abs() * _animation.value;
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -108,23 +102,27 @@ class _SavingsProgressCardState extends State<SavingsProgressCard>
                     height: 30,
                     child: CustomPaint(
                       painter: _RingPainter(
-                        progress: progress.abs() * _animation.value,
+                        progress: animatedProgress,
                         isNegative: isNegative,
                         color: progressColor,
                         trackColor: progressColor.withOpacity(0.12),
                       ),
-                      child: Center(child: statusIcon),
+                      child: Center(
+                        child: Icon(
+                          statusIconData,
+                          size: 12,
+                          color: progressColor,
+                        ),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  // Badge de porcentaje
                 ],
               );
             },
           ),
           const SizedBox(height: 10),
           Text(
-            'Ahorro',
+            widget.name ?? 'Ahorro',
             style: TextStyle(
               fontSize: 11,
               color: colors.textSecondary,
@@ -133,7 +131,7 @@ class _SavingsProgressCardState extends State<SavingsProgressCard>
           ),
           const SizedBox(height: 2),
           Text(
-            '\₡${net.toStringAsFixed(0)}',
+            '\u20a1${widget.currentAmount.toStringAsFixed(0)}',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w800,
@@ -148,7 +146,7 @@ class _SavingsProgressCardState extends State<SavingsProgressCard>
 }
 
 class _RingPainter extends CustomPainter {
-  final double progress; // 0.0 → 1.0
+  final double progress;
   final bool isNegative;
   final Color color;
   final Color trackColor;
@@ -164,10 +162,9 @@ class _RingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = (size.width - 7) / 2;
-    const strokeWidth = 5.0;
+    const strokeWidth = 3.0;
     const startAngle = -math.pi / 2;
 
-    // Track
     canvas.drawCircle(
       center,
       radius,
@@ -182,7 +179,6 @@ class _RingPainter extends CustomPainter {
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: radius),
         startAngle,
-        // Negativo va en sentido anti-horario
         isNegative ? -sweep : sweep,
         false,
         Paint()

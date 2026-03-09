@@ -6,6 +6,7 @@ import 'package:where_ma_money_go/blocs/bills/bills_event.dart';
 import 'package:where_ma_money_go/blocs/bills/bills_state.dart';
 import 'package:where_ma_money_go/models/bill.dart';
 import 'package:where_ma_money_go/models/category.dart';
+import 'package:where_ma_money_go/models/saving.dart';
 import 'package:where_ma_money_go/models/subcategory.dart';
 import 'package:where_ma_money_go/providers/theme/app_colors.dart';
 import 'package:where_ma_money_go/providers/theme/theme_provider.dart';
@@ -27,6 +28,7 @@ class _BillsScreenState extends State<BillsScreen> {
   String? _selectedMonth; // formato 'M' (número de mes como string)
   Categories? _selectedCategory;
   Subcategory? _selectedSubcategory;
+  Saving? _selectedSaving; // ← nuevo filtro de meta de ahorro
 
   @override
   void initState() {
@@ -114,10 +116,12 @@ class _BillsScreenState extends State<BillsScreen> {
         selectedMonth: _selectedMonth,
         fromDate: _fromDate,
         toDate: _toDate,
-        onApply: ({category, subcategory, month, fromDate, toDate}) {
+        selectedSaving: _selectedSaving, // ← nuevo
+        onApply: ({category, subcategory, month, fromDate, toDate, saving}) {
           // ← subcategory nuevo
           setState(() {
             _selectedCategory = category;
+            _selectedSaving = saving;
             _selectedSubcategory = subcategory; // ← nuevo
             _selectedMonth = month;
             _fromDate = fromDate;

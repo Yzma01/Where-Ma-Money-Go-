@@ -176,6 +176,39 @@ class AuthRepository {
     }
   }
 
+  Future<void> deleteUserData() async {
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        // Eliminar colecciones del usuario
+        await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('bills')
+            .get()
+            .then((snapshot) {
+              for (var doc in snapshot.docs) {
+                doc.reference.delete();
+              }
+            });
+        await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('savings')
+            .get()
+            .then((snapshot) {
+              for (var doc in snapshot.docs) {
+                doc.reference.delete();
+              }
+            });
+      }
+    } on FirebaseAuthException catch (e) {
+      throw _authException(e);
+    } catch (e) {
+      throw Exception('Error al eliminar la cuenta.');
+    }
+  }
+
   /// Traduce los códigos de error de Firebase a mensajes legibles.
   Exception _authException(FirebaseAuthException e) {
     final message = switch (e.code) {

@@ -1,10 +1,14 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
 import 'package:where_ma_money_go/blocs/category/category_bloc.dart';
 import 'package:where_ma_money_go/blocs/category/category_event.dart';
 import 'package:where_ma_money_go/blocs/category/category_state.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_bloc.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_state.dart';
 import 'package:where_ma_money_go/models/category.dart';
+import 'package:where_ma_money_go/models/saving.dart';
 import 'package:where_ma_money_go/models/subcategory.dart';
 import 'package:where_ma_money_go/providers/theme/app_colors.dart';
 import 'package:where_ma_money_go/providers/theme/theme_provider.dart';
@@ -16,6 +20,7 @@ typedef FilterCallback =
       String? month,
       DateTime? fromDate,
       DateTime? toDate,
+      Saving? saving,
     });
 
 class FilterSheet extends StatefulWidget {
@@ -24,6 +29,7 @@ class FilterSheet extends StatefulWidget {
   final String? selectedMonth;
   final DateTime? fromDate;
   final DateTime? toDate;
+  final Saving? selectedSaving;
   final FilterCallback onApply;
   final VoidCallback onClear;
 
@@ -34,6 +40,7 @@ class FilterSheet extends StatefulWidget {
     required this.selectedMonth,
     required this.fromDate,
     required this.toDate,
+    this.selectedSaving,
     required this.onApply,
     required this.onClear,
   });
@@ -48,7 +55,11 @@ class _FilterSheetState extends State<FilterSheet> {
   String? _month;
   DateTime? _fromDate;
   DateTime? _toDate;
+  Saving? _saving;
   int _dateMode = 0;
+
+  bool get _isAhorroSelected =>
+      _category != null && _category!.name.toLowerCase().contains('ahorro');
 
   static const _months = [
     ('1', 'Enero'),
@@ -73,11 +84,12 @@ class _FilterSheetState extends State<FilterSheet> {
     _month = widget.selectedMonth;
     _fromDate = widget.fromDate;
     _toDate = widget.toDate;
+    _saving = widget.selectedSaving;
     if (_month != null) _dateMode = 1;
     if (_fromDate != null || _toDate != null) _dateMode = 2;
 
-    final state = context.read<CategoryBloc>().state;
-    if (state is! CategoryLoaded) {
+    final catState = context.read<CategoryBloc>().state;
+    if (catState is! CategoryLoaded) {
       context.read<CategoryBloc>().add(LoadCategories());
     }
   }
@@ -88,6 +100,9 @@ class _FilterSheetState extends State<FilterSheet> {
     setState(() {
       _category = cat;
       _subcategory = null;
+      if (cat == null || !cat.name.toLowerCase().contains('ahorro')) {
+        _saving = null;
+      }
     });
   }
 
@@ -98,6 +113,7 @@ class _FilterSheetState extends State<FilterSheet> {
       month: _dateMode == 1 ? _month : null,
       fromDate: _dateMode == 2 ? _fromDate : null,
       toDate: _dateMode == 2 ? _toDate : null,
+      saving: _saving,
     );
     Navigator.pop(context);
   }
@@ -146,7 +162,7 @@ class _FilterSheetState extends State<FilterSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Handle + título fijos
+          // Handle + título (fijos)
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
             child: Column(
@@ -204,7 +220,7 @@ class _FilterSheetState extends State<FilterSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Categoría — Wrap sin scroll
+                  // ── Categoría
                   _SectionLabel(text: 'CATEGORÍA', colors: colors),
                   const SizedBox(height: 10),
                   BlocBuilder<CategoryBloc, CategoryState>(
@@ -224,11 +240,9 @@ class _FilterSheetState extends State<FilterSheet> {
                           ),
                         );
                       }
-
                       final categories = state is CategoryLoaded
                           ? state.categories
                           : <Categories>[];
-
                       return Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -254,8 +268,10 @@ class _FilterSheetState extends State<FilterSheet> {
                     },
                   ),
 
-                  // ── Subcategoría — Wrap sin scroll
-                  if (_category != null && _subcategories.isNotEmpty) ...[
+                  // ── Subcategoría (solo si NO es ahorro y tiene subcats)
+                  if (_category != null &&
+                      _subcategories.isNotEmpty &&
+                      !_isAhorroSelected) ...[
                     const SizedBox(height: 20),
                     _SectionLabel(text: 'SUBCATEGORÍA', colors: colors),
                     const SizedBox(height: 10),
@@ -282,6 +298,100 @@ class _FilterSheetState extends State<FilterSheet> {
                           ),
                         ),
                       ],
+                    ),
+                  ],
+
+                  // ── Metas de ahorro (solo si categoría es "ahorro")
+                  if (_isAhorroSelected) ...[
+                    const SizedBox(height: 20),
+                    _SectionLabel(text: 'PLANES DE AHORRO', colors: colors),
+                    const SizedBox(height: 10),
+                    BlocBuilder<SavingBloc, SavingState>(
+                      builder: (context, state) {
+                        if (state is SavingLoading) {
+                          return SizedBox(
+                            height: 36,
+                            child: Center(
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: colors.primary,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        final savings = state is SavingLoaded
+                            ? state.savings
+                            : <Saving>[];
+
+                        if (savings.isEmpty) {
+                          return Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: colors.surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: colors.border,
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline_rounded,
+                                  size: 14,
+                                  color: colors.textSecondary,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'No hay metas de ahorro',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: colors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        savings.removeWhere((s) => s.isCompleted);
+                        savings.sort((a, b) => a.name.compareTo(b.name));
+
+                        return Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _SavingChip(
+                              label: 'Todas',
+                              progress: null,
+                              selected: _saving == null,
+                              colors: colors,
+                              onTap: () => setState(() => _saving = null),
+                            ),
+                            ...savings.map((s) {
+                              final progress = s.goalAmount > 0
+                                  ? (s.currentAmount / s.goalAmount).clamp(
+                                      0.0,
+                                      1.0,
+                                    )
+                                  : 0.0;
+                              return _SavingChip(
+                                label: s.name,
+                                progress: progress,
+                                selected: _saving?.id == s.id,
+                                isCompleted: s.isCompleted,
+                                colors: colors,
+                                onTap: () => setState(() => _saving = s),
+                              );
+                            }),
+                          ],
+                        );
+                      },
                     ),
                   ],
 
@@ -326,7 +436,6 @@ class _FilterSheetState extends State<FilterSheet> {
                   ),
                   const SizedBox(height: 14),
 
-                  // Meses — Wrap sin scroll
                   if (_dateMode == 1)
                     Wrap(
                       spacing: 8,
@@ -366,7 +475,6 @@ class _FilterSheetState extends State<FilterSheet> {
                       }).toList(),
                     ),
 
-                  // Rango de fechas
                   if (_dateMode == 2)
                     Row(
                       children: [
@@ -423,6 +531,182 @@ class _FilterSheetState extends State<FilterSheet> {
   }
 }
 
+// ─── Saving Chip ──────────────────────────────────────────────────────────────
+
+class _SavingChip extends StatelessWidget {
+  final String label;
+  final double? progress;
+  final bool selected;
+  final bool isCompleted;
+  final AppThemeColors colors;
+  final VoidCallback onTap;
+
+  const _SavingChip({
+    required this.label,
+    required this.progress,
+    required this.selected,
+    required this.colors,
+    required this.onTap,
+    this.isCompleted = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pct = progress != null
+        ? '${(progress! * 100).toStringAsFixed(0)}%'
+        : null;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? colors.primary
+              : isCompleted
+              ? colors.success.withOpacity(0.1)
+              : colors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected
+                ? colors.primary
+                : isCompleted
+                ? colors.success.withOpacity(0.4)
+                : colors.border,
+            width: selected ? 1.5 : 0.5,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Icono/ring
+            if (progress == null)
+              Icon(
+                Icons.savings_outlined,
+                size: 13,
+                color: selected ? Colors.white : colors.textSecondary,
+              )
+            else if (isCompleted)
+              Icon(
+                Icons.check_circle_rounded,
+                size: 13,
+                color: selected ? Colors.white : colors.success,
+              )
+            else
+              _MiniRing(
+                progress: progress!,
+                color: selected ? Colors.white : colors.primary,
+                trackColor: selected
+                    ? Colors.white.withOpacity(0.3)
+                    : colors.primary.withOpacity(0.2),
+              ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: selected
+                    ? Colors.white
+                    : isCompleted
+                    ? colors.success
+                    : colors.textPrimary,
+              ),
+            ),
+            // Porcentaje (solo si no es "Todas" ni completada)
+            if (pct != null && !isCompleted) ...[
+              const SizedBox(width: 5),
+              Text(
+                pct,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: selected
+                      ? Colors.white.withOpacity(0.8)
+                      : colors.primary,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniRing extends StatelessWidget {
+  final double progress;
+  final Color color;
+  final Color trackColor;
+
+  const _MiniRing({
+    required this.progress,
+    required this.color,
+    required this.trackColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 13,
+      height: 13,
+      child: CustomPaint(
+        painter: _MiniRingPainter(
+          progress: progress,
+          color: color,
+          trackColor: trackColor,
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniRingPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  final Color trackColor;
+
+  const _MiniRingPainter({
+    required this.progress,
+    required this.color,
+    required this.trackColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.width - 3) / 2;
+    const sw = 2.5;
+
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = trackColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = sw,
+    );
+
+    if (progress > 0) {
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        -math.pi / 2,
+        2 * math.pi * progress.clamp(0.0, 1.0),
+        false,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = sw
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_MiniRingPainter old) => old.progress != progress;
+}
+
 // ─── Sub-widgets ──────────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
@@ -431,17 +715,15 @@ class _SectionLabel extends StatelessWidget {
   const _SectionLabel({required this.text, required this.colors});
 
   @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1.3,
-        color: colors.textSecondary,
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Text(
+    text,
+    style: TextStyle(
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1.3,
+      color: colors.textSecondary,
+    ),
+  );
 }
 
 class _FilterChip extends StatelessWidget {

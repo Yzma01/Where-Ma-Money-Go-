@@ -29,3 +29,5 @@ class AuthSendPasswordReset extends AuthEvent {
 }
 
 class AuthCheckCurrentUser extends AuthEvent {}
+
+class AuthDeleteData extends AuthEvent {}

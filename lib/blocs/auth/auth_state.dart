@@ -29,3 +29,5 @@ class AuthError extends AuthState {
   final String message;
   AuthError({required this.message});
 }
+
+class AuthDataDeleted extends AuthState {}

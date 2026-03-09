@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:where_ma_money_go/blocs/bills/bills_bloc.dart';
 import 'package:where_ma_money_go/blocs/bills/bills_event.dart';
 import 'package:where_ma_money_go/blocs/bills/bills_state.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_bloc.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_event.dart';
 import 'package:where_ma_money_go/models/bill.dart';
 import 'package:where_ma_money_go/providers/theme/app_colors.dart';
 import 'package:where_ma_money_go/providers/theme/theme_provider.dart';
@@ -29,6 +31,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     _month = DateTime(DateTime.now().year, DateTime.now().month);
     context.read<BillsBloc>().add(LoadBills());
+    context.read<SavingBloc>().add(LoadSavings());
   }
 
   List<Bill> _thisMonth(List<Bill> bills) {

@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_bloc.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_state.dart';
+import 'package:where_ma_money_go/models/saving.dart';
 import 'package:where_ma_money_go/providers/theme/app_colors.dart';
 import 'package:where_ma_money_go/widgets/dashboard/savings_progress_card.dart';
 
@@ -24,40 +28,52 @@ class MonthStatsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _StatCard(
-            colors: colors,
-            label: 'Ingresos',
-            amount: income,
-            icon: Icons.arrow_downward_rounded,
-            iconColor: colors.success,
-            bgColor: colors.success.withOpacity(0.1),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _StatCard(
-            colors: colors,
-            label: 'Egresos',
-            amount: expense,
-            icon: Icons.arrow_upward_rounded,
-            iconColor: colors.error,
-            bgColor: colors.error.withOpacity(0.1),
-          ),
-        ),
-        const SizedBox(width: 10),
-        if (totalIncome > 0)
-          Expanded(
-            child: SavingsProgressCard(
-              colors: colors,
-              withdrawals: savingsWithdrawals,
-              savings: savingsDeposits,
-              income: totalIncome,
+    return BlocBuilder<SavingBloc, SavingState>(
+      builder: (context, state) {
+        Saving? activeSaving;
+
+        if (state is SavingLoaded && state.savings.isNotEmpty) {
+          final actives = state.savings.where((s) => !s.isCompleted).toList()
+            ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+          activeSaving = actives.isNotEmpty ? actives.first : null;
+        }
+        return Row(
+          children: [
+            Expanded(
+              child: _StatCard(
+                colors: colors,
+                label: 'Ingresos',
+                amount: income,
+                icon: Icons.arrow_downward_rounded,
+                iconColor: colors.success,
+                bgColor: colors.success.withOpacity(0.1),
+              ),
             ),
-          ),
-      ],
+            const SizedBox(width: 10),
+            Expanded(
+              child: _StatCard(
+                colors: colors,
+                label: 'Egresos',
+                amount: expense,
+                icon: Icons.arrow_upward_rounded,
+                iconColor: colors.error,
+                bgColor: colors.error.withOpacity(0.1),
+              ),
+            ),
+            if (activeSaving != null && activeSaving.isNotEmpty) ...[
+              const SizedBox(width: 10),
+              Expanded(
+                child: SavingsProgressCard(
+                  colors: colors,
+                  currentAmount: activeSaving.currentAmount,
+                  goalAmount: activeSaving.goalAmount,
+                  name: activeSaving.name,
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }
@@ -111,7 +127,7 @@ class _StatCard extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            '\₡${amount.toStringAsFixed(0)}',
+            '\u20a1${amount.toStringAsFixed(0)}',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w800,
