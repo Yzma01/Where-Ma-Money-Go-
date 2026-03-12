@@ -5,6 +5,7 @@ import 'package:where_ma_money_go/screens/bills.dart';
 import 'package:where_ma_money_go/screens/dashboard.dart';
 import 'package:where_ma_money_go/screens/notes.dart';
 import 'package:where_ma_money_go/screens/settings.dart';
+import 'package:where_ma_money_go/screens/digital_envelop.dart';
 
 class MainScreen extends StatefulWidget {
   @override
@@ -18,6 +19,7 @@ class _MainScreenState extends State<MainScreen> {
     DashboardScreen(),
     BillsScreen(),
     NotesScreen(),
+    DigitalEnvelopScreen(),
     SettingsScreen(),
   ];
 
@@ -36,12 +38,19 @@ class _MainScreenState extends State<MainScreen> {
           });
         },
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Dashboard'),
-          BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Bills'),
-          BottomNavigationBarItem(icon: Icon(Icons.note), label: 'Notes'),
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Inicio'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.bar_chart),
+            label: 'Facturas',
+          ),
+          BottomNavigationBarItem(icon: Icon(Icons.note), label: 'Notas'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.cases_rounded),
+            label: 'Sobres',
+          ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),
-            label: 'Settings',
+            label: 'Configuraciones',
           ),
         ],
       ),

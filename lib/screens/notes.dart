@@ -7,17 +7,22 @@ import 'package:where_ma_money_go/blocs/category/category_bloc.dart';
 import 'package:where_ma_money_go/blocs/notes/notes_bloc.dart';
 import 'package:where_ma_money_go/blocs/notes/notes_event.dart';
 import 'package:where_ma_money_go/blocs/notes/notes_state.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_bloc.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_event.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_state.dart';
 import 'package:where_ma_money_go/models/bill.dart';
 import 'package:where_ma_money_go/models/note.dart';
 import 'package:where_ma_money_go/models/recurrent.dart';
 import 'package:where_ma_money_go/providers/theme/app_colors.dart';
 import 'package:where_ma_money_go/providers/theme/theme_provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:where_ma_money_go/services/notifications/notes/service.dart';
+import 'package:where_ma_money_go/widgets/notes/group_list.dart';
 import 'package:where_ma_money_go/widgets/notes/header.dart';
-import 'package:where_ma_money_go/widgets/notes/list.dart';
 import 'package:where_ma_money_go/widgets/notes/recurrent_tab.dart';
 import 'package:where_ma_money_go/widgets/notes/sheet.dart';
 import 'package:where_ma_money_go/widgets/notes/tab_bar.dart';
+import 'package:where_ma_money_go/models/note_priority.dart';
 
 class NotesScreen extends StatefulWidget {
   const NotesScreen({super.key});
@@ -36,6 +41,10 @@ class _NotesScreenState extends State<NotesScreen>
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
     context.read<NotesBloc>().add(LoadNotes());
+    // Inicializar notificaciones y pedir permisos
+    NotificationService.instance.init().then((_) {
+      NotificationService.instance.requestPermissions();
+    });
   }
 
   @override
@@ -65,6 +74,7 @@ class _NotesScreenState extends State<NotesScreen>
           BlocProvider.value(value: ctx.read<NotesBloc>()),
           BlocProvider.value(value: ctx.read<BillsBloc>()),
           BlocProvider.value(value: ctx.read<CategoryBloc>()),
+          BlocProvider.value(value: ctx.read<SavingBloc>()),
         ],
         child: NoteSheet(colors: colors, note: note),
       ),
@@ -118,15 +128,13 @@ class _NotesScreenState extends State<NotesScreen>
     }
   }
 
-  // ── En notes_screen.dart, reemplaza _payNote completo ─────────────────────────
-
   void _payNote(BuildContext ctx, Note note) {
     if (note.bill == null || note.recurrent == null) return;
     final bill = note.bill!;
     final recurrent = note.recurrent!;
     final now = DateTime.now();
 
-    // 1. Registrar el bill con la fecha de hoy
+    // 1. Registrar el gasto en el historial de bills
     ctx.read<BillsBloc>().add(
       AddBill(
         bill: Bill(
@@ -138,49 +146,86 @@ class _NotesScreenState extends State<NotesScreen>
           month: now.month.toString(),
           type: 'fixed',
           cashFlow: bill.cashFlow,
+          savingId: bill.savingId,
         ),
       ),
     );
 
-    // 2. Calcular la próxima fecha de pago desde hoy
+    // 2. Si tiene saving asociado, sumar (income) o restar (expense)
+    if (bill.savingId != null && bill.savingId!.isNotEmpty) {
+      final savingState = ctx.read<SavingBloc>().state;
+      if (savingState is SavingLoaded) {
+        try {
+          final saving = savingState.savings.firstWhere(
+            (s) => s.id == bill.savingId,
+          );
+          final delta = bill.cashFlow == 'expense' ? -bill.amount : bill.amount;
+          final newAmount = (saving.currentAmount + delta).clamp(
+            0.0,
+            double.infinity,
+          );
+          ctx.read<SavingBloc>().add(
+            UpdateSaving(
+              saving: saving.copyWith(
+                currentAmount: newAmount,
+                isCompleted: newAmount >= saving.goalAmount,
+              ),
+            ),
+          );
+        } catch (e) {
+          debugPrint('Saving update error: $e');
+        }
+      }
+    }
+
+    // 3. Marcar nota como pagada y calcular próximo vencimiento
     final nextDue = Recurrent.calcNextDue(now, recurrent.frequency);
-
-    // 3. Actualizar la nota:
-    //    - isCompleted: true  (desaparece de "Recurrentes" hasta que sea tiempo)
-    //    - recurrent.nextDueDate = nextDue  (para saber cuándo reactivar)
-    ctx.read<NotesBloc>().add(
-      UpdateNote(
-        note: Note(
-          id: note.id,
-          title: note.title,
-          content: note.content,
-          createdAt: note.createdAt,
-          hasBill: note.hasBill,
-          bill: note.bill,
-          isRecurrent: note.isRecurrent,
-          isCompleted: true,
-          recurrent: recurrent.copyWith(nextDueDate: nextDue),
-        ),
-      ),
+    final updatedNote = Note(
+      id: note.id,
+      title: note.title,
+      content: note.content,
+      createdAt: note.createdAt,
+      dueDate: note.dueDate,
+      category: note.category,
+      hasDueDate: note.hasDueDate,
+      hasBill: note.hasBill,
+      priority: note.priority,
+      bill: note.bill,
+      isRecurrent: note.isRecurrent,
+      isCompleted: true,
+      recurrent: recurrent.copyWith(nextDueDate: nextDue),
     );
+    ctx.read<NotesBloc>().add(UpdateNote(note: updatedNote));
+
+    // Reprogramar notificación para el próximo ciclo
+    NotificationService.instance.scheduleForNote(updatedNote);
 
     final colors = ctx.read<ThemeProvider>().colors;
     final nextLabel = _formatNextDue(nextDue, recurrent.frequency);
+    final isSaving = bill.savingId != null && bill.savingId!.isNotEmpty;
+    final isExpense = bill.cashFlow == 'expense';
 
     ScaffoldMessenger.of(ctx).showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            const Text('✅ ', style: TextStyle(fontSize: 16)),
+            Text(
+              isSaving ? (isExpense ? '📤 ' : '🐖 ') : '✅ ',
+              style: const TextStyle(fontSize: 16),
+            ),
             Expanded(
               child: Text(
-                'Pago registrado · \u20a1${bill.amount.toStringAsFixed(0)}  ·  Próximo $nextLabel',
+                isSaving
+                    ? '${isExpense ? 'Retiro' : 'Aporte'} registrado · \u20a1${bill.amount.toStringAsFixed(0)}  ·  Próximo $nextLabel'
+                    : 'Pago registrado · \u20a1${bill.amount.toStringAsFixed(0)}  ·  Próximo $nextLabel',
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
           ],
         ),
-        backgroundColor: colors.success,
+        backgroundColor: isSaving
+            ? (isExpense ? colors.warning : colors.primary)
+            : colors.success,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 4),
@@ -216,7 +261,11 @@ class _NotesScreenState extends State<NotesScreen>
           title: n.title,
           content: n.content,
           createdAt: n.createdAt,
+          dueDate: n.dueDate,
+          category: n.category,
+          hasDueDate: n.hasDueDate,
           hasBill: n.hasBill,
+          priority: n.priority,
           bill: n.bill,
           isRecurrent: n.isRecurrent,
           isCompleted: !n.isCompleted,
@@ -224,6 +273,30 @@ class _NotesScreenState extends State<NotesScreen>
         ),
       ),
     );
+  }
+
+  /// Ordena por prioridad desc, luego por dueDate asc
+  List<Note> _sortNotes(List<Note> notes) {
+    final sorted = List<Note>.from(notes);
+    sorted.sort((a, b) {
+      // Prioridad alta primero
+      final pCmp = b.priority.value.compareTo(a.priority.value);
+      if (pCmp != 0) return pCmp;
+      // Overdue primero
+      if (a.isOverdue && !b.isOverdue) return -1;
+      if (!a.isOverdue && b.isOverdue) return 1;
+      // DueDate más pronto primero
+      if (a.hasDueDate &&
+          b.hasDueDate &&
+          a.dueDate != null &&
+          b.dueDate != null) {
+        return a.dueDate!.compareTo(b.dueDate!);
+      }
+      if (a.hasDueDate) return -1;
+      if (b.hasDueDate) return 1;
+      return b.createdAt.compareTo(a.createdAt);
+    });
+    return sorted;
   }
 
   @override
@@ -237,17 +310,23 @@ class _NotesScreenState extends State<NotesScreen>
           builder: (context, state) {
             final allNotes = state is NotesLoaded ? state.notes : <Note>[];
 
-            // ✅ Reactivar notas recurrentes cuya fecha ya llegó
-            // Se hace una sola vez por build, solo las que necesitan cambio
+            // Reactivar notas recurrentes cuya fecha llegó
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted) return;
-              final toReactivate = allNotes.where((n) {
-                if (!n.isRecurrent) return false;
-                if (!n.isCompleted) return false; // ya está pendiente, skip
-                return n.recurrent?.isDue ?? false; // llegó su fecha
-              }).toList();
 
+              // Sincronizar notificaciones con el estado actual
+              if (state is NotesLoaded) {
+                NotificationService.instance.syncAll(allNotes);
+              }
+
+              final toReactivate = allNotes.where((n) {
+                if (!n.isRecurrent || !n.isCompleted) return false;
+                return n.recurrent?.isDue ?? false;
+              }).toList();
               for (final note in toReactivate) {
+                // Notificación inmediata: "volvió a pendiente"
+                NotificationService.instance.notifyReactivated(note);
+
                 context.read<NotesBloc>().add(
                   UpdateNote(
                     note: Note(
@@ -255,33 +334,35 @@ class _NotesScreenState extends State<NotesScreen>
                       title: note.title,
                       content: note.content,
                       createdAt: note.createdAt,
+                      dueDate: note.dueDate,
+                      category: note.category,
+                      hasDueDate: note.hasDueDate,
                       hasBill: note.hasBill,
+                      priority: note.priority,
                       bill: note.bill,
                       isRecurrent: note.isRecurrent,
-                      isCompleted: false, // ← vuelve a pendiente
-                      recurrent:
-                          note.recurrent, // nextDueDate se mantiene intacto
+                      isCompleted: false,
+                      recurrent: note.recurrent,
                     ),
                   ),
                 );
               }
             });
 
+            // Separar por tipo
             final recurrentPending = allNotes
                 .where((n) => n.isRecurrent && !n.isCompleted)
                 .toList();
-
             final recurrentPaid = allNotes
                 .where((n) => n.isRecurrent && n.isCompleted)
                 .toList();
-
+            final regular = _sortNotes(
+              allNotes.where((n) => !n.isRecurrent && !n.isCompleted).toList(),
+            );
             final completed = allNotes
                 .where((n) => n.isCompleted && !n.isRecurrent)
                 .toList();
 
-            final regular = allNotes
-                .where((n) => !n.isRecurrent && !n.isCompleted)
-                .toList();
             return Column(
               children: [
                 NotesHeader(
@@ -305,8 +386,7 @@ class _NotesScreenState extends State<NotesScreen>
                     controller: _tabs,
                     colors: colors,
                     counts: [
-                      recurrentPending.length +
-                          recurrentPaid.length, // total recurrentes
+                      recurrentPending.length + recurrentPaid.length,
                       regular.length,
                       completed.length,
                     ],
@@ -342,7 +422,8 @@ class _NotesScreenState extends State<NotesScreen>
                               onPay: (n) =>
                                   n.hasBill ? _payNote(context, n) : null,
                             ),
-                            NotesList(
+                            // Notas agrupadas por categoría con collapse
+                            GroupedNotesList(
                               notes: regular,
                               colors: colors,
                               emptyIcon: Icons.sticky_note_2_outlined,
@@ -355,7 +436,7 @@ class _NotesScreenState extends State<NotesScreen>
                                   _toggleComplete(context, n),
                               onPay: (_) => null,
                             ),
-                            NotesList(
+                            GroupedNotesList(
                               notes: completed,
                               colors: colors,
                               emptyIcon: Icons.check_circle_outline_rounded,
@@ -379,8 +460,9 @@ class _NotesScreenState extends State<NotesScreen>
       ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'notes_fab',
-        onPressed: () => _openNote(context, colors),
-        backgroundColor: colors.primary,
+        onPressed: () =>
+            _openNote(context, context.read<ThemeProvider>().colors),
+        backgroundColor: context.watch<ThemeProvider>().colors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -393,6 +475,8 @@ class _NotesScreenState extends State<NotesScreen>
     );
   }
 }
+
+// ─── Error View ───────────────────────────────────────────────────────────────
 
 class _ErrorView extends StatelessWidget {
   final AppThemeColors colors;

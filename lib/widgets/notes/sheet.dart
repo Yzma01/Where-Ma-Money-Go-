@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
@@ -7,6 +8,33 @@ import 'package:where_ma_money_go/blocs/category/category_state.dart';
 import 'package:where_ma_money_go/blocs/notes/notes_bloc.dart';
 import 'package:where_ma_money_go/blocs/notes/notes_event.dart';
 import 'package:where_ma_money_go/blocs/savings/saving_bloc.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_event.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_state.dart';
+import 'package:where_ma_money_go/models/bill.dart';
+import 'package:where_ma_money_go/models/category.dart';
+import 'package:where_ma_money_go/models/note.dart';
+import 'package:where_ma_money_go/models/note_priority.dart';
+import 'package:where_ma_money_go/models/recurrent.dart';
+import 'package:where_ma_money_go/models/saving.dart';
+import 'package:where_ma_money_go/models/subcategory.dart';
+import 'package:where_ma_money_go/providers/theme/app_colors.dart';
+import 'package:where_ma_money_go/services/notifications/notes/service.dart';
+import 'package:where_ma_money_go/widgets/notes/chip.dart';
+import 'package:where_ma_money_go/widgets/notes/field.dart';
+import 'package:where_ma_money_go/widgets/notes/label.dart';
+import 'package:where_ma_money_go/widgets/notes/segment_row.dart';
+import 'package:where_ma_money_go/widgets/notes/title.dart';
+import 'dart:math' as math;
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:uuid/uuid.dart';
+import 'package:where_ma_money_go/blocs/category/category_bloc.dart';
+import 'package:where_ma_money_go/blocs/category/category_event.dart';
+import 'package:where_ma_money_go/blocs/category/category_state.dart';
+import 'package:where_ma_money_go/blocs/notes/notes_bloc.dart';
+import 'package:where_ma_money_go/blocs/notes/notes_event.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_bloc.dart';
+import 'package:where_ma_money_go/blocs/savings/saving_event.dart';
 import 'package:where_ma_money_go/blocs/savings/saving_state.dart';
 import 'package:where_ma_money_go/models/bill.dart';
 import 'package:where_ma_money_go/models/category.dart';
@@ -15,12 +43,6 @@ import 'package:where_ma_money_go/models/recurrent.dart';
 import 'package:where_ma_money_go/models/saving.dart';
 import 'package:where_ma_money_go/models/subcategory.dart';
 import 'package:where_ma_money_go/providers/theme/app_colors.dart';
-import 'package:where_ma_money_go/screens/add_bill.dart';
-import 'package:where_ma_money_go/widgets/notes/chip.dart';
-import 'package:where_ma_money_go/widgets/notes/field.dart';
-import 'package:where_ma_money_go/widgets/notes/label.dart';
-import 'package:where_ma_money_go/widgets/notes/segment_row.dart';
-import 'package:where_ma_money_go/widgets/notes/title.dart';
 
 class NoteSheet extends StatefulWidget {
   final AppThemeColors colors;
@@ -38,14 +60,21 @@ class _NoteSheetState extends State<NoteSheet> {
   late final TextEditingController _amountCtrl;
   late bool _isRecurrent;
   late bool _hasBill;
+  late bool _hasDueDate;
   late bool _isCompleted;
+  late DateTime _dueDate;
+  late NotePriority _priority;
+  late String _noteCategory; // categoría de nota (de BD, tipo "notas")
   String _frequency = 'monthly';
   String _cashFlow = 'expense';
-  Categories? _category;
+  Categories? _billCategory; // categoría del bill
   Subcategory? _subcategory;
+  Saving? _selectedSaving;
 
   bool get _isEditing => widget.note != null;
-  List<Subcategory> get _subs => _category?.subcategories ?? [];
+  bool get _isAhorro =>
+      _billCategory?.name.toLowerCase().contains('ahorro') ?? false;
+  List<Subcategory> get _subs => _billCategory?.subcategories ?? [];
 
   @override
   void initState() {
@@ -58,36 +87,39 @@ class _NoteSheetState extends State<NoteSheet> {
     );
     _isRecurrent = n?.isRecurrent ?? false;
     _hasBill = n?.hasBill ?? false;
+    _hasDueDate = n?.hasDueDate ?? false;
     _isCompleted = n?.isCompleted ?? false;
+    _dueDate = n?.dueDate ?? DateTime.now().add(const Duration(days: 7));
+    _priority = n?.priority ?? NotePriority.none;
+    _noteCategory = n?.category ?? '';
     _frequency = n?.recurrent?.frequency ?? 'monthly';
     _cashFlow = n?.bill?.cashFlow ?? 'expense';
 
-    // Cargar categorías si no están
-    final catState = context.read<CategoryBloc>().state;
-    if (catState is! CategoryLoaded) {
+    if (context.read<CategoryBloc>().state is! CategoryLoaded) {
       context.read<CategoryBloc>().add(LoadCategories());
     }
+    if (context.read<SavingBloc>().state is! SavingLoaded) {
+      context.read<SavingBloc>().add(LoadSavings());
+    }
 
-    // ✅ Buscar la categoría completa (con subcategorías) en el bloc,
-    //    en lugar de usar la versión embebida en el bill (que viene sin subs)
+    // Resolver billCategory fresca del bloc
     if (n?.bill?.category != null) {
-      final savedCatName = n!.bill!.category.name;
+      final savedName = n!.bill!.category.name;
+      final catState = context.read<CategoryBloc>().state;
       if (catState is CategoryLoaded) {
-        _category = catState.categories.firstWhere(
-          (c) => c.name == savedCatName,
+        _billCategory = catState.categories.firstWhere(
+          (c) => c.name == savedName,
           orElse: () => n.bill!.category,
         );
-        // Buscar subcategoría guardada dentro de las subs de la categoría fresca
         if (n.bill?.subcategory != null) {
-          final savedSubName = n.bill!.subcategory.name;
-          _subcategory = _category?.subcategories?.firstWhere(
-            (s) => s.name == savedSubName,
+          final savedSub = n.bill!.subcategory.name;
+          _subcategory = _billCategory?.subcategories?.firstWhere(
+            (s) => s.name == savedSub,
             orElse: () => n.bill!.subcategory,
           );
         }
       } else {
-        // El bloc aún no cargó — guardar nombre para resolver después
-        _category = n.bill!.category;
+        _billCategory = n.bill!.category;
         _subcategory = n.bill?.subcategory;
       }
     }
@@ -106,19 +138,23 @@ class _NoteSheetState extends State<NoteSheet> {
     if (title.isEmpty) return;
 
     Bill? bill;
-    if (_hasBill && _category != null) {
+    if (_hasBill && _billCategory != null) {
       final amount =
           double.tryParse(_amountCtrl.text.replaceAll(',', '.')) ?? 0;
       if (amount > 0) {
+        final sub = _isAhorro && _selectedSaving != null
+            ? Subcategory(name: _selectedSaving!.name)
+            : _subcategory ?? Subcategory(name: _billCategory!.name);
         bill = Bill(
           id: widget.note?.bill?.id ?? const Uuid().v4(),
-          category: _category!,
-          subcategory: _subcategory ?? Subcategory(name: _category!.name),
+          category: _billCategory!,
+          subcategory: sub,
           amount: amount,
           date: DateTime.now(),
           month: DateTime.now().month.toString(),
           type: 'fixed',
           cashFlow: _cashFlow,
+          savingId: _isAhorro ? _selectedSaving?.id : null,
         );
       }
     }
@@ -130,6 +166,7 @@ class _NoteSheetState extends State<NoteSheet> {
         title: title,
         startDate: widget.note?.createdAt ?? DateTime.now(),
         frequency: _frequency,
+        nextDueDate: widget.note?.recurrent?.nextDueDate,
       );
     }
 
@@ -138,7 +175,11 @@ class _NoteSheetState extends State<NoteSheet> {
       title: title,
       content: _contentCtrl.text.trim(),
       createdAt: widget.note?.createdAt ?? DateTime.now(),
+      dueDate: _hasDueDate ? _dueDate : null,
+      category: _noteCategory,
+      hasDueDate: _hasDueDate,
       hasBill: _hasBill && bill != null,
+      priority: _priority,
       bill: bill,
       isRecurrent: _isRecurrent,
       isCompleted: _isCompleted,
@@ -150,7 +191,30 @@ class _NoteSheetState extends State<NoteSheet> {
     } else {
       context.read<NotesBloc>().add(AddNote(note: note));
     }
+    // Programar notificaciones para esta nota
+    NotificationService.instance.scheduleForNote(note);
     Navigator.pop(context);
+  }
+
+  Future<void> _pickDueDate() async {
+    final colors = widget.colors;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dueDate,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+      builder: (_, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: ColorScheme.dark(
+            primary: colors.primary,
+            surface: colors.surface,
+            onSurface: colors.textPrimary,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _dueDate = picked);
   }
 
   @override
@@ -159,7 +223,7 @@ class _NoteSheetState extends State<NoteSheet> {
 
     return Container(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.92,
+        maxHeight: MediaQuery.of(context).size.height * 0.95,
       ),
       decoration: BoxDecoration(
         color: colors.background,
@@ -187,6 +251,7 @@ class _NoteSheetState extends State<NoteSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ── Título ─────────────────────────────────────────────
                   SheetLabel('TÍTULO', colors),
                   const SizedBox(height: 8),
                   SheetField(
@@ -198,6 +263,8 @@ class _NoteSheetState extends State<NoteSheet> {
                     bold: true,
                   ),
                   const SizedBox(height: 16),
+
+                  // ── Descripción ────────────────────────────────────────
                   SheetLabel('DESCRIPCIÓN', colors),
                   const SizedBox(height: 8),
                   SheetField(
@@ -209,6 +276,158 @@ class _NoteSheetState extends State<NoteSheet> {
                     bold: false,
                   ),
                   const SizedBox(height: 20),
+
+                  // ── Categoría de nota ───────────────────────────────────
+                  SheetLabel('CATEGORÍA', colors),
+                  const SizedBox(height: 8),
+                  BlocBuilder<CategoryBloc, CategoryState>(
+                    builder: (_, state) {
+                      // Solo mostrar subcategorías de tipo "notas"
+                      final noteCats = state is CategoryLoaded
+                          ? state.categories
+                                .where(
+                                  (c) =>
+                                      c.name.toLowerCase().contains('nota') ||
+                                      (c.subcategories?.any((s) => true) ??
+                                          false),
+                                )
+                                .expand(
+                                  (c) => [
+                                    // La propia categoría "Notas" como opción
+                                    if (c.name.toLowerCase().contains('nota'))
+                                      c.name,
+                                    // Subcategorías de cualquier categoría marcada
+                                    ...(c.subcategories
+                                            ?.map((s) => s.name)
+                                            .toList() ??
+                                        []),
+                                  ],
+                                )
+                                .toSet()
+                                .toList()
+                          : <String>[];
+
+                      // Filtrar: solo subcategorías de categorías cuyo nombre sea "notas"
+                      final noteCategories = state is CategoryLoaded
+                          ? _buildNoteCategories(state.categories)
+                          : <String>[];
+
+                      if (noteCategories.isEmpty && state is CategoryLoaded) {
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: colors.surface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: colors.border,
+                              width: 0.5,
+                            ),
+                          ),
+                          child: Text(
+                            'No hay categorías de notas. Crea una categoría llamada "Notas" en Ajustes.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: colors.textSecondary,
+                            ),
+                          ),
+                        );
+                      }
+
+                      return Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          // Opción "Sin categoría"
+                          GestureDetector(
+                            onTap: () => setState(() => _noteCategory = ''),
+                            child: SheetChip(
+                              label: 'Sin categoría',
+                              icon: '🏷️',
+                              selected: _noteCategory.isEmpty,
+                              colors: colors,
+                            ),
+                          ),
+                          ...noteCategories.map(
+                            (name) => GestureDetector(
+                              onTap: () => setState(() => _noteCategory = name),
+                              child: SheetChip(
+                                label: name,
+                                icon: '•',
+                                isEmoji: false,
+                                selected: _noteCategory == name,
+                                colors: colors,
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
+
+                  // ── Prioridad ──────────────────────────────────────────
+                  SheetLabel('PRIORIDAD', colors),
+                  const SizedBox(height: 8),
+                  _PriorityPicker(
+                    colors: colors,
+                    selected: _priority,
+                    onChanged: (p) => setState(() => _priority = p),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // ── Fecha de caducidad ─────────────────────────────────
+                  SheetSwitchTile(
+                    colors: colors,
+                    icon: Icons.access_time_rounded,
+                    label: 'Fecha de caducidad',
+                    subtitle: 'Recibe una alerta cuando venza',
+                    value: _hasDueDate,
+                    onChanged: (v) => setState(() => _hasDueDate = v),
+                  ),
+                  if (_hasDueDate) ...[
+                    const SizedBox(height: 12),
+                    GestureDetector(
+                      onTap: _pickDueDate,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.surface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: colors.border, width: 0.5),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.calendar_today_outlined,
+                              size: 16,
+                              color: colors.primary,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              _formatDate(_dueDate),
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: colors.textPrimary,
+                              ),
+                            ),
+                            const Spacer(),
+                            Icon(
+                              Icons.chevron_right,
+                              size: 16,
+                              color: colors.iconDefault,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+
+                  // ── Recurrente ─────────────────────────────────────────
                   SheetSwitchTile(
                     colors: colors,
                     icon: Icons.repeat_rounded,
@@ -228,6 +447,8 @@ class _NoteSheetState extends State<NoteSheet> {
                     ),
                   ],
                   const SizedBox(height: 16),
+
+                  // ── Pago fijo ──────────────────────────────────────────
                   SheetSwitchTile(
                     colors: colors,
                     icon: Icons.receipt_long_outlined,
@@ -266,7 +487,7 @@ class _NoteSheetState extends State<NoteSheet> {
                           : colors.success,
                     ),
                     const SizedBox(height: 14),
-                    SheetLabel('CATEGORÍA', colors),
+                    SheetLabel('CATEGORÍA DEL GASTO', colors),
                     const SizedBox(height: 8),
                     BlocBuilder<CategoryBloc, CategoryState>(
                       builder: (_, state) {
@@ -286,19 +507,18 @@ class _NoteSheetState extends State<NoteSheet> {
                             ? state.categories
                             : <Categories>[];
 
-                        // ✅ Si la categoría cargada aún no tiene subcategorías (vino del bill embebido),
-                        //    resolverla ahora con la lista fresca del bloc
-                        if (_category != null &&
-                            (_category!.subcategories == null ||
-                                _category!.subcategories!.isEmpty) &&
+                        if (_billCategory != null &&
+                            (_billCategory!.subcategories == null ||
+                                _billCategory!.subcategories!.isEmpty) &&
                             state is CategoryLoaded) {
                           final fresh = cats.firstWhere(
-                            (c) => c.name == _category!.name,
-                            orElse: () => _category!,
+                            (c) => c.name == _billCategory!.name,
+                            orElse: () => _billCategory!,
                           );
                           if (fresh.subcategories?.isNotEmpty == true) {
                             WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (mounted) setState(() => _category = fresh);
+                              if (mounted)
+                                setState(() => _billCategory = fresh);
                             });
                           }
                         }
@@ -310,14 +530,14 @@ class _NoteSheetState extends State<NoteSheet> {
                               .map(
                                 (cat) => GestureDetector(
                                   onTap: () => setState(() {
-                                    _category =
-                                        cat; // ← siempre usa el objeto fresco del bloc
+                                    _billCategory = cat;
                                     _subcategory = null;
+                                    _selectedSaving = null;
                                   }),
                                   child: SheetChip(
                                     label: cat.name,
                                     icon: cat.icon ?? '📦',
-                                    selected: _category?.name == cat.name,
+                                    selected: _billCategory?.name == cat.name,
                                     colors: colors,
                                   ),
                                 ),
@@ -326,93 +546,58 @@ class _NoteSheetState extends State<NoteSheet> {
                         );
                       },
                     ),
-                    if (_category?.name.toLowerCase() == 'ahorro') ...[
+
+                    // Planes de ahorro si cat = Ahorro
+                    if (_isAhorro) ...[
                       const SizedBox(height: 14),
-                      SheetLabel('METAS DE AHORRO', colors),
+                      SheetLabel('PLAN DE AHORRO', colors),
                       const SizedBox(height: 8),
                       BlocBuilder<SavingBloc, SavingState>(
-                        builder: (context, state) {
-                          if (state is SavingLoading) {
-                            return Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: colors.primary,
-                                ),
-                              ),
-                            );
-                          }
-
-                          final activeSavings = state is SavingLoaded
+                        builder: (_, state) {
+                          final allSavings = state is SavingLoaded
                               ? state.savings
-                                    .where((s) => !s.isCompleted)
+                                    .where((s) => s.isNotEmpty)
                                     .toList()
                               : <Saving>[];
 
-                          if (activeSavings.isEmpty) {
-                            return Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: colors.surface,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: colors.border,
-                                  width: 0.5,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.info_outline_rounded,
-                                    size: 14,
-                                    color: colors.textSecondary,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'No hay metas activas',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: colors.textSecondary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
+                          if (allSavings.isEmpty) {
+                            return _EmptySavingsHint(colors: colors);
                           }
 
-                          return Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: activeSavings.map((s) {
-                              final progress = s.goalAmount > 0
-                                  ? (s.currentAmount / s.goalAmount).clamp(
-                                      0.0,
-                                      1.0,
-                                    )
-                                  : 0.0;
-                              final selected = _subcategory?.name == s.name;
-                              return GestureDetector(
-                                onTap: () => setState(() {
-                                  // Guardamos la meta seleccionada usando el campo de subcategoría
-                                  _subcategory = Subcategory(name: s.name);
-                                }),
-                                child: SavingChip(
-                                  saving: s,
-                                  progress: progress,
-                                  selected: selected,
-                                  colors: colors,
-                                  onTap: () => setState(() {
-                                    _subcategory = Subcategory(name: s.name);
-                                  }),
-                                ),
-                              );
-                            }).toList(),
+                          return Column(
+                            children: allSavings
+                                .map(
+                                  (s) => _SavingPlanTile(
+                                    saving: s,
+                                    colors: colors,
+                                    selected: _selectedSaving?.id == s.id,
+                                    onTap: () => setState(() {
+                                      _selectedSaving =
+                                          _selectedSaving?.id == s.id
+                                          ? null
+                                          : s;
+                                      if (_selectedSaving != null) {
+                                        final rem =
+                                            s.goalAmount - s.currentAmount;
+                                        if (rem > 0 &&
+                                            _amountCtrl.text.isEmpty) {
+                                          _amountCtrl.text = rem
+                                              .toStringAsFixed(0);
+                                        }
+                                      }
+                                    }),
+                                  ),
+                                )
+                                .toList(),
                           );
                         },
                       ),
                     ],
-                    if (_category != null && _subs.isNotEmpty) ...[
+
+                    // Subcategorías si cat normal
+                    if (!_isAhorro &&
+                        _billCategory != null &&
+                        _subs.isNotEmpty) ...[
                       const SizedBox(height: 14),
                       SheetLabel('SUBCATEGORÍA', colors),
                       const SizedBox(height: 8),
@@ -436,6 +621,7 @@ class _NoteSheetState extends State<NoteSheet> {
                       ),
                     ],
                   ],
+
                   const SizedBox(height: 28),
                   SizedBox(
                     width: double.infinity,
@@ -467,7 +653,239 @@ class _NoteSheetState extends State<NoteSheet> {
       ),
     );
   }
+
+  /// Devuelve los nombres de subcategorías de la categoría "Notas"
+  /// o el nombre de la categoría si no tiene subs.
+  List<String> _buildNoteCategories(List<Categories> allCats) {
+    final result = <String>[];
+    for (final cat in allCats) {
+      if (!cat.name.toLowerCase().contains('nota')) continue;
+      final subs = cat.subcategories ?? [];
+      if (subs.isEmpty) {
+        result.add(cat.name);
+      } else {
+        result.addAll(subs.map((s) => s.name));
+      }
+    }
+    return result;
+  }
+
+  static const _monthsShort = [
+    '',
+    'ene',
+    'feb',
+    'mar',
+    'abr',
+    'may',
+    'jun',
+    'jul',
+    'ago',
+    'sep',
+    'oct',
+    'nov',
+    'dic',
+  ];
+
+  String _formatDate(DateTime d) =>
+      '${d.day} ${_monthsShort[d.month]} ${d.year}';
 }
+
+// ─── Priority Picker ─────────────────────────────────────────────────────────
+
+class _PriorityPicker extends StatelessWidget {
+  final AppThemeColors colors;
+  final NotePriority selected;
+  final ValueChanged<NotePriority> onChanged;
+
+  const _PriorityPicker({
+    required this.colors,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  Color _colorFor(NotePriority p, AppThemeColors c) {
+    switch (p) {
+      case NotePriority.high:
+        return c.error;
+      case NotePriority.medium:
+        return c.warning;
+      case NotePriority.low:
+        return c.success;
+      case NotePriority.none:
+        return c.textSecondary;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: NotePriority.values.map((p) {
+        final sel = selected == p;
+        final color = _colorFor(p, colors);
+        return Expanded(
+          child: GestureDetector(
+            onTap: () => onChanged(p),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              margin: EdgeInsets.only(right: p != NotePriority.high ? 8 : 0),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: sel ? color.withOpacity(0.15) : colors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: sel ? color : colors.border,
+                  width: sel ? 1.5 : 0.5,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    p.emoji.isNotEmpty ? p.emoji : '—',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    p.label,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: sel ? color : colors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+// ─── Saving plan tile ─────────────────────────────────────────────────────────
+
+class _SavingPlanTile extends StatelessWidget {
+  final Saving saving;
+  final AppThemeColors colors;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SavingPlanTile({
+    required this.saving,
+    required this.colors,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final s = saving;
+    final progress = s.goalAmount > 0
+        ? (s.currentAmount / s.goalAmount).clamp(0.0, 1.0)
+        : 0.0;
+    final remaining = (s.goalAmount - s.currentAmount).clamp(
+      0.0,
+      double.infinity,
+    );
+    final daysLeft = s.dueDate.difference(DateTime.now()).inDays;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected ? colors.primary.withOpacity(0.08) : colors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? colors.primary : colors.border,
+            width: selected ? 1.5 : 0.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 40,
+              height: 40,
+              child: CustomPaint(
+                painter: _RingPainter(
+                  progress: progress,
+                  color: selected ? colors.primary : colors.textSecondary,
+                  trackColor: (selected ? colors.primary : colors.textSecondary)
+                      .withOpacity(0.1),
+                ),
+                child: Center(
+                  child: Text(
+                    '${(progress * 100).toStringAsFixed(0)}%',
+                    style: TextStyle(
+                      fontSize: 8,
+                      fontWeight: FontWeight.w800,
+                      color: selected ? colors.primary : colors.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.name,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: selected ? colors.primary : colors.textPrimary,
+                    ),
+                  ),
+                  Text(
+                    'Falta \u20a1${remaining.toStringAsFixed(0)} · ${daysLeft > 0 ? '$daysLeft días' : 'Vencida'}',
+                    style: TextStyle(fontSize: 11, color: colors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            if (selected)
+              Icon(Icons.check_circle_rounded, color: colors.primary, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptySavingsHint extends StatelessWidget {
+  final AppThemeColors colors;
+  const _EmptySavingsHint({required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.border, width: 0.5),
+      ),
+      child: Row(
+        children: [
+          const Text('🐷', style: TextStyle(fontSize: 20)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'No tienes planes de ahorro activos.\nCrea uno en la pantalla de Ahorros.',
+              style: TextStyle(fontSize: 13, color: colors.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Sheet Header ─────────────────────────────────────────────────────────────
 
 class _SheetHeader extends StatelessWidget {
   final AppThemeColors colors;
@@ -566,6 +984,8 @@ class _SheetHeader extends StatelessWidget {
   }
 }
 
+// ─── Frequency Picker ─────────────────────────────────────────────────────────
+
 class _FrequencyPicker extends StatelessWidget {
   final AppThemeColors colors;
   final String selected;
@@ -617,4 +1037,51 @@ class _FrequencyPicker extends StatelessWidget {
       }).toList(),
     );
   }
+}
+
+// ─── Ring Painter ─────────────────────────────────────────────────────────────
+
+class _RingPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  final Color trackColor;
+  final double strokeWidth;
+
+  const _RingPainter({
+    required this.progress,
+    required this.color,
+    required this.trackColor,
+    this.strokeWidth = 3.5,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.width - strokeWidth) / 2;
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = trackColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth,
+    );
+    if (progress > 0) {
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        -math.pi / 2,
+        2 * math.pi * progress.clamp(0.0, 1.0),
+        false,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RingPainter old) =>
+      old.progress != progress || old.color != color;
 }

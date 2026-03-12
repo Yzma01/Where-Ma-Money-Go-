@@ -37,5 +37,23 @@ class Saving {
     };
   }
 
+  Saving copyWith({
+    String? id,
+    String? name,
+    double? goalAmount,
+    double? currentAmount,
+    DateTime? dueDate,
+    bool? isCompleted,
+  }) {
+    return Saving(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      goalAmount: goalAmount ?? this.goalAmount,
+      currentAmount: currentAmount ?? this.currentAmount,
+      dueDate: dueDate ?? this.dueDate,
+      isCompleted: isCompleted ?? this.isCompleted,
+    );
+  }
+
   bool get isNotEmpty => id.isNotEmpty && name.isNotEmpty && !isCompleted;
 }

@@ -26,6 +26,9 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   late DateTime _month;
 
+  bool _excludeEnvelopeDeposit(Bill b) =>
+      b.category.name == 'Sobres' && b.type == 'envelope_deposit';
+
   @override
   void initState() {
     super.initState();
@@ -71,10 +74,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             final monthBills = _thisMonth(allBills);
 
             final totalIncome = monthBills
-                .where((b) => b.cashFlow == 'income')
+                .where(
+                  (b) => b.cashFlow == 'income' && _excludeEnvelopeDeposit(b),
+                )
                 .fold(0.0, (s, b) => s + b.amount);
             final totalExpense = monthBills
-                .where((b) => b.cashFlow == 'expense')
+                .where(
+                  (b) => b.cashFlow == 'expense' && _excludeEnvelopeDeposit(b),
+                )
                 .fold(0.0, (s, b) => s + b.amount);
 
             // Ahorro = categoría cuyo nombre contenga 'ahorro' (case-insensitive)
@@ -116,8 +123,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 amount: (byCategory[key]?.amount ?? 0) + b.amount,
               );
             }
-            final categoryData = byCategory.values.toList()
-              ..sort((a, b) => b.amount.compareTo(a.amount));
+            final categoryData =
+                (byCategory.values.toList()
+                      ..sort((a, b) => b.amount.compareTo(a.amount)))
+                    .take(4)
+                    .toList();
 
             final balance = totalIncome - totalExpense;
 

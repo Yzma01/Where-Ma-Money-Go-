@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:where_ma_money_go/models/note.dart';
 import 'package:where_ma_money_go/providers/theme/app_colors.dart';
-import 'package:where_ma_money_go/widgets/notes/card.dart';
+import 'package:where_ma_money_go/widgets/notes/group_list.dart';
 
 class RecurrentTab extends StatefulWidget {
   final List<Note> pending;
@@ -28,7 +28,7 @@ class RecurrentTab extends StatefulWidget {
 }
 
 class _RecurrentTabState extends State<RecurrentTab> {
-  int _sub = 0; // 0 = pendientes, 1 = pagados
+  int _sub = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -96,15 +96,16 @@ class _RecurrentTabState extends State<RecurrentTab> {
           ),
         ),
 
-        // ── Lista activa ──────────────────────────────────────────────────
+        // ── Lista agrupada por categoría ──────────────────────────────────
         Expanded(
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 200),
             child: _sub == 0
-                ? _NoteListView(
-                    key: const ValueKey('pending'),
+                ? GroupedNotesList(
+                    key: const ValueKey('recurrent_pending'),
                     notes: widget.pending,
                     colors: c,
+                    startCollapsed: true,
                     emptyIcon: Icons.check_circle_outline_rounded,
                     emptyTitle: '¡Todo al día!',
                     emptySubtitle: 'No hay pagos pendientes',
@@ -113,10 +114,11 @@ class _RecurrentTabState extends State<RecurrentTab> {
                     onToggleComplete: widget.onToggleComplete,
                     onPay: widget.onPay,
                   )
-                : _NoteListView(
-                    key: const ValueKey('paid'),
+                : GroupedNotesList(
+                    key: const ValueKey('recurrent_paid'),
                     notes: widget.paid,
                     colors: c,
+                    startCollapsed: true,
                     emptyIcon: Icons.receipt_long_outlined,
                     emptyTitle: 'Sin pagos registrados',
                     emptySubtitle: 'Los pagos realizados aparecerán aquí',
@@ -131,8 +133,6 @@ class _RecurrentTabState extends State<RecurrentTab> {
     );
   }
 }
-
-// ─── Sub-tab pill ─────────────────────────────────────────────────────────────
 
 class _SubTab extends StatelessWidget {
   final String label;
@@ -200,75 +200,6 @@ class _SubTab extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-// ─── Lista interna ────────────────────────────────────────────────────────────
-
-class _NoteListView extends StatelessWidget {
-  final List<Note> notes;
-  final AppThemeColors colors;
-  final IconData emptyIcon;
-  final String emptyTitle;
-  final String emptySubtitle;
-  final ValueChanged<Note> onTap;
-  final ValueChanged<Note> onLongPress;
-  final ValueChanged<Note> onToggleComplete;
-  final ValueChanged<Note> onPay;
-
-  const _NoteListView({
-    super.key,
-    required this.notes,
-    required this.colors,
-    required this.emptyIcon,
-    required this.emptyTitle,
-    required this.emptySubtitle,
-    required this.onTap,
-    required this.onLongPress,
-    required this.onToggleComplete,
-    required this.onPay,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (notes.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(emptyIcon, size: 44, color: colors.iconDefault),
-            const SizedBox(height: 14),
-            Text(
-              emptyTitle,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: colors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              emptySubtitle,
-              style: TextStyle(fontSize: 13, color: colors.textSecondary),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-      itemCount: notes.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (_, i) => NoteCard(
-        note: notes[i],
-        colors: colors,
-        onTap: () => onTap(notes[i]),
-        onLongPress: () => onLongPress(notes[i]),
-        onToggleComplete: () => onToggleComplete(notes[i]),
-        onPay: () => onPay(notes[i]),
       ),
     );
   }
