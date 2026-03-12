@@ -45,6 +45,8 @@ dependencies:
 
   provider: ^6.1.0
 
+  uuid:
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

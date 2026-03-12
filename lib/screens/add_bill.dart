@@ -335,7 +335,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
                                       )
                                     : 0.0;
                                 final selected = _selectedSaving?.id == s.id;
-                                return _SavingChip(
+                                return SavingChip(
                                   saving: s,
                                   progress: progress,
                                   selected: selected,
@@ -392,14 +392,14 @@ class _AddBillScreenState extends State<AddBillScreen> {
 
 // ─── Saving Chip ──────────────────────────────────────────────────────────────
 
-class _SavingChip extends StatelessWidget {
+class SavingChip extends StatelessWidget {
   final Saving saving;
   final double progress;
   final bool selected;
   final AppThemeColors colors;
   final VoidCallback onTap;
 
-  const _SavingChip({
+  const SavingChip({
     required this.saving,
     required this.progress,
     required this.selected,

@@ -40,7 +40,6 @@ class Bill {
   factory Bill.fromMap(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final map = doc.data();
     return Bill(
-      // Usar fromMapData porque 'category' es un Map embebido, no un documento
       category: Categories.fromMapData(map['category'] as Map<String, dynamic>),
       subcategory: Subcategory.fromMap(
         map['subcategory'] as Map<String, dynamic>,
@@ -49,6 +48,21 @@ class Bill {
       date: DateTime.parse(map['date'] as String),
       month: map['month'] as String?,
       id: doc.id,
+      type: map['type'] as String,
+      cashFlow: map['cashFlow'] as String,
+    );
+  }
+
+  factory Bill.fromMapData(Map<String, dynamic> map) {
+    return Bill(
+      id: map['id'] as String?,
+      category: Categories.fromMapData(map['category'] as Map<String, dynamic>),
+      subcategory: Subcategory.fromMap(
+        map['subcategory'] as Map<String, dynamic>,
+      ),
+      amount: (map['amount'] as num).toDouble(),
+      date: map['date'] != null ? DateTime.parse(map['date'] as String) : null,
+      month: map['month'] as String?,
       type: map['type'] as String,
       cashFlow: map['cashFlow'] as String,
     );

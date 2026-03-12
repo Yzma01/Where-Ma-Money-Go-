@@ -12,11 +12,13 @@ import 'package:where_ma_money_go/blocs/auth/auth_bloc.dart';
 import 'package:where_ma_money_go/blocs/auth/auth_event.dart';
 import 'package:where_ma_money_go/blocs/bills/bills_bloc.dart';
 import 'package:where_ma_money_go/blocs/category/category_bloc.dart';
+import 'package:where_ma_money_go/blocs/notes/notes_bloc.dart';
 import 'package:where_ma_money_go/blocs/savings/saving_bloc.dart';
 import 'package:where_ma_money_go/providers/user/user_provider.dart';
 import 'package:where_ma_money_go/repositories/auth_repository.dart';
 import 'package:where_ma_money_go/repositories/bills_repository.dart';
 import 'package:where_ma_money_go/repositories/category_repository.dart';
+import 'package:where_ma_money_go/repositories/notes_repository.dart';
 import 'package:where_ma_money_go/repositories/saving_repository.dart';
 import 'package:where_ma_money_go/screens/dashboard.dart';
 import 'package:where_ma_money_go/providers/theme/theme_provider.dart';
@@ -53,6 +55,9 @@ void main() async {
           ),
           BlocProvider(
             create: (_) => SavingBloc(savingRepository: SavingRepository()),
+          ),
+          BlocProvider(
+            create: (_) => NotesBloc(noteRepository: NotesRepository()),
           ),
         ],
         child: const MyApp(),
