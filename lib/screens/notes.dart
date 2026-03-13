@@ -308,6 +308,9 @@ class _NotesScreenState extends State<NotesScreen>
       body: SafeArea(
         child: BlocBuilder<NotesBloc, NotesState>(
           builder: (context, state) {
+            if (state is NotesLoading) {
+              return Center(child: CircularProgressIndicator());
+            }
             final allNotes = state is NotesLoaded ? state.notes : <Note>[];
 
             // Reactivar notas recurrentes cuya fecha llegó

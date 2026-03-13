@@ -47,7 +47,13 @@ void main() async {
       ],
       child: MultiBlocProvider(
         providers: [
-          BlocProvider(create: (_) => BillsBloc(BillsRepository())),
+          BlocProvider(
+            create: (_) => BillsBloc(
+              billsRepository: BillsRepository(),
+              savingRepository: SavingRepository(),
+              envelopRepository: EnvelopRepository(),
+            ),
+          ),
           BlocProvider(
             create: (_) =>
                 CategoryBloc(categoryRepository: CategoryRepository()),

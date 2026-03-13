@@ -140,7 +140,7 @@ class _MiniStat extends StatelessWidget {
               ),
             ),
             Text(
-              '\$${amount.toStringAsFixed(2)}',
+              '\₡${amount.toStringAsFixed(2)}',
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w800,

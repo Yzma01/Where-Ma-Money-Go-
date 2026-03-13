@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:provider/provider.dart';
 import 'package:where_ma_money_go/blocs/bills/bills_bloc.dart';
 import 'package:where_ma_money_go/blocs/bills/bills_event.dart';
 import 'package:where_ma_money_go/blocs/bills/bills_state.dart';
@@ -26,8 +25,10 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   late DateTime _month;
 
-  bool _excludeEnvelopeDeposit(Bill b) =>
-      b.category.name == 'Sobres' && b.type == 'envelope_deposit';
+  bool _isEnvelopeMovement(Bill b) =>
+      b.category.name.toLowerCase().contains('sobre');
+  bool _isSavingMovement(Bill b) =>
+      b.category.name.toLowerCase().contains('ahorro');
 
   @override
   void initState() {
@@ -73,44 +74,66 @@ class _DashboardScreenState extends State<DashboardScreen> {
             final allBills = state is BillsLoaded ? state.bills : <Bill>[];
             final monthBills = _thisMonth(allBills);
 
-            final totalIncome = monthBills
-                .where(
-                  (b) => b.cashFlow == 'income' && _excludeEnvelopeDeposit(b),
-                )
-                .fold(0.0, (s, b) => s + b.amount);
-            final totalExpense = monthBills
-                .where(
-                  (b) => b.cashFlow == 'expense' && _excludeEnvelopeDeposit(b),
-                )
-                .fold(0.0, (s, b) => s + b.amount);
+            // ── Balance general ───────────────────────────────────────────────
+            // Movimientos normales y sobres: income suma, expense resta
+            // Ahorros están INVERTIDOS: income = sacás del balance (resta),
+            //                           expense = regresa al balance (suma)
+            double balance = 0.0;
+            double balanceIncome = 0.0;
+            double balanceExpense = 0.0;
+            for (final b in monthBills) {
+              final isSaving = _isSavingMovement(b);
+              final isEnvelope = _isEnvelopeMovement(b);
+              final isIncome = b.cashFlow == 'income';
+              // Ahorros invertidos: income resta del balance, expense suma
+              final countsAsIncome = isSaving ? !isIncome : isIncome;
+              if (countsAsIncome) {
+                balance += b.amount;
+                // Sobres y ahorros no se muestran en los mini-stats del BalanceCard
+                if (!isEnvelope && !isSaving) balanceIncome += b.amount;
+              } else {
+                balance -= b.amount;
+                if (!isEnvelope && !isSaving) balanceExpense += b.amount;
+              }
+            }
 
-            // Ahorro = categoría cuyo nombre contenga 'ahorro' (case-insensitive)
-            final savingsDeposits = monthBills
+            // ── Estadísticas del mes (excluye ahorros y sobres) ───────────────
+            final totalIncome = monthBills
                 .where(
                   (b) =>
                       b.cashFlow == 'income' &&
-                      b.category.name.toLowerCase().contains('ahorro'),
+                      !_isSavingMovement(b) &&
+                      !_isEnvelopeMovement(b),
                 )
                 .fold(0.0, (s, b) => s + b.amount);
 
-            // Retiros del ahorro (el usuario marca como ingreso con categoría "ahorro")
-            final savingsWithdrawals = monthBills
+            final totalExpense = monthBills
                 .where(
                   (b) =>
                       b.cashFlow == 'expense' &&
-                      b.category.name.toLowerCase().contains('ahorro'),
+                      !_isSavingMovement(b) &&
+                      !_isEnvelopeMovement(b),
                 )
                 .fold(0.0, (s, b) => s + b.amount);
 
-            // Net para MonthStatsRow
+            // ── Ahorros del mes ───────────────────────────────────────────────
+            final savingsDeposits = monthBills
+                .where((b) => b.cashFlow == 'income' && _isSavingMovement(b))
+                .fold(0.0, (s, b) => s + b.amount);
+
+            final savingsWithdrawals = monthBills
+                .where((b) => b.cashFlow == 'expense' && _isSavingMovement(b))
+                .fold(0.0, (s, b) => s + b.amount);
+
             final totalSavings = savingsDeposits - savingsWithdrawals;
 
-            // Gastos por categoría (solo egresos, excluye ahorro)
+            // ── Gastos por categoría (excluye ahorros y sobres) ───────────────
             final expenseBills = monthBills
                 .where(
                   (b) =>
                       b.cashFlow == 'expense' &&
-                      !b.category.name.toLowerCase().contains('ahorro'),
+                      !_isSavingMovement(b) &&
+                      !_isEnvelopeMovement(b),
                 )
                 .toList();
 
@@ -128,8 +151,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ..sort((a, b) => b.amount.compareTo(a.amount)))
                     .take(4)
                     .toList();
-
-            final balance = totalIncome - totalExpense;
 
             return RefreshIndicator(
               color: colors.primary,
@@ -165,8 +186,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         BalanceCard(
                           colors: colors,
                           balance: balance,
-                          income: totalIncome,
-                          expense: totalExpense,
+                          income: balanceIncome,
+                          expense: balanceExpense,
                         ),
                         const SizedBox(height: 16),
                         MonthStatsRow(
@@ -195,7 +216,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           const SizedBox(height: 16),
                         ],
-
                         if (totalIncome > 0) const SizedBox(height: 16),
                         RecentBillsList(
                           colors: colors,
@@ -220,8 +240,6 @@ class _CategoryData {
   final double amount;
   _CategoryData({required this.name, required this.icon, required this.amount});
 }
-
-// ─── Header ───────────────────────────────────────────────────────────────────
 
 class _DashboardHeader extends StatelessWidget {
   final AppThemeColors colors;
@@ -260,76 +278,69 @@ class _DashboardHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    userName.isNotEmpty ? 'Hola, $userName 👋' : 'Resumen',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: colors.textSecondary,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Text(
-                    'Dashboard',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -1.0,
-                      color: colors.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-              const Spacer(),
-              Container(
-                decoration: BoxDecoration(
-                  color: colors.surface,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: colors.border, width: 0.5),
+              Text(
+                userName.isNotEmpty ? 'Hola, $userName 👋' : 'Resumen',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: colors.textSecondary,
+                  fontWeight: FontWeight.w500,
                 ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: onPrev,
-                      icon: Icon(
-                        Icons.chevron_left_rounded,
-                        color: colors.textPrimary,
-                        size: 20,
-                      ),
-                      padding: const EdgeInsets.all(8),
-                      constraints: const BoxConstraints(),
-                    ),
-                    Text(
-                      '${_months[month.month].substring(0, 3)} ${month.year}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: colors.textPrimary,
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: isCurrentMonth ? null : onNext,
-                      icon: Icon(
-                        Icons.chevron_right_rounded,
-                        color: isCurrentMonth
-                            ? colors.border
-                            : colors.textPrimary,
-                        size: 20,
-                      ),
-                      padding: const EdgeInsets.all(8),
-                      constraints: const BoxConstraints(),
-                    ),
-                  ],
+              ),
+              Text(
+                'Dashboard',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -1.0,
+                  color: colors.textPrimary,
                 ),
               ),
             ],
+          ),
+          const Spacer(),
+          Container(
+            decoration: BoxDecoration(
+              color: colors.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: colors.border, width: 0.5),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  onPressed: onPrev,
+                  icon: Icon(
+                    Icons.chevron_left_rounded,
+                    color: colors.textPrimary,
+                    size: 20,
+                  ),
+                  padding: const EdgeInsets.all(8),
+                  constraints: const BoxConstraints(),
+                ),
+                Text(
+                  '${_months[month.month].substring(0, 3)} ${month.year}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: colors.textPrimary,
+                  ),
+                ),
+                IconButton(
+                  onPressed: isCurrentMonth ? null : onNext,
+                  icon: Icon(
+                    Icons.chevron_right_rounded,
+                    color: isCurrentMonth ? colors.border : colors.textPrimary,
+                    size: 20,
+                  ),
+                  padding: const EdgeInsets.all(8),
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
           ),
         ],
       ),

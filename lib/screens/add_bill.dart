@@ -95,34 +95,34 @@ class _AddBillScreenState extends State<AddBillScreen> {
 
     final bill = Bill(
       category: _selectedCategory!,
-      subcategory:
-          _selectedSubcategory ?? Subcategory(name: _selectedCategory!.name),
+      subcategory: _selectedSaving != null
+          ? Subcategory(name: _selectedSaving!.name)
+          : _selectedSubcategory ?? Subcategory(name: _selectedCategory!.name),
       amount: amount,
       date: _selectedDate,
       month: _selectedDate.month.toString(),
       type: _type,
       cashFlow: _cashFlow,
+      savingId: _isAhorro ? _selectedSaving?.id : null, // ✅ guardar el link
     );
 
     context.read<BillsBloc>().add(AddBill(bill: bill));
 
-    // Si la categoría es ahorro y hay una meta seleccionada,
-    // actualizar su currentAmount.
-    // Egreso = el usuario aparta dinero → SUMA al ahorro.
-    // Ingreso = el usuario retira del ahorro → RESTA del ahorro.
+    // Actualizar currentAmount del saving
     if (_isAhorro && _selectedSaving != null) {
       final s = _selectedSaving!;
-      final delta = _cashFlow == 'expense' ? -amount : amount;
+      // expense = aparta dinero → SUMA al ahorro
+      // income  = retira dinero → RESTA del ahorro
+      final delta = _cashFlow == 'income' ? amount : -amount;
       final newAmount = (s.currentAmount + delta).clamp(0.0, double.infinity);
-      final updated = Saving(
-        id: s.id,
-        name: s.name,
-        goalAmount: s.goalAmount,
-        currentAmount: newAmount,
-        dueDate: s.dueDate,
-        isCompleted: newAmount >= s.goalAmount,
+      context.read<SavingBloc>().add(
+        UpdateSaving(
+          saving: s.copyWith(
+            currentAmount: newAmount,
+            isCompleted: newAmount >= s.goalAmount,
+          ),
+        ),
       );
-      context.read<SavingBloc>().add(UpdateSaving(saving: updated));
     }
 
     Navigator.pop(context);
@@ -218,6 +218,10 @@ class _AddBillScreenState extends State<AddBillScreen> {
                           }
                           final categories = state is CategoryLoaded
                               ? state.categories
+                                    .where(
+                                      (c) => c.name.toLowerCase() != 'sobre',
+                                    )
+                                    .toList()
                               : <Categories>[];
 
                           return Wrap(

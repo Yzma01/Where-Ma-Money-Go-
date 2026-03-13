@@ -58,45 +58,52 @@ class _DigitalEnvelopScreenState extends State<DigitalEnvelopScreen> {
               (s, e) => s + e.amount,
             );
 
-            return Column(
-              children: [
-                _Header(
-                  colors: colors,
-                  total: totalInSobres,
-                  onAdd: () => _openCreateSheet(context, colors),
-                ),
-                Expanded(
-                  child: envelops.isEmpty
-                      ? _EmptyState(
-                          colors: colors,
-                          onAdd: () => _openCreateSheet(context, colors),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 100),
-                          itemCount: envelops.length,
-                          itemBuilder: (_, i) => _EnvelopCard(
-                            envelop: envelops[i],
+            return RefreshIndicator(
+              color: colors.primary,
+              backgroundColor: colors.surface,
+              onRefresh: () async =>
+                  context.read<EnvelopBloc>().add(LoadEnvelops()),
+
+              child: Column(
+                children: [
+                  _Header(
+                    colors: colors,
+                    total: totalInSobres,
+                    onAdd: () => _openCreateSheet(context, colors),
+                  ),
+                  Expanded(
+                    child: envelops.isEmpty
+                        ? _EmptyState(
                             colors: colors,
-                            onDeposit: () => _openTransactionSheet(
-                              context,
-                              colors,
-                              envelops[i],
-                              isDeposit: true,
+                            onAdd: () => _openCreateSheet(context, colors),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(20, 4, 20, 100),
+                            itemCount: envelops.length,
+                            itemBuilder: (_, i) => _EnvelopCard(
+                              envelop: envelops[i],
+                              colors: colors,
+                              onDeposit: () => _openTransactionSheet(
+                                context,
+                                colors,
+                                envelops[i],
+                                isDeposit: true,
+                              ),
+                              onWithdraw: () => _openTransactionSheet(
+                                context,
+                                colors,
+                                envelops[i],
+                                isDeposit: false,
+                              ),
+                              onHistory: () =>
+                                  _openHistory(context, colors, envelops[i]),
+                              onDelete: () =>
+                                  _confirmDelete(context, colors, envelops[i]),
                             ),
-                            onWithdraw: () => _openTransactionSheet(
-                              context,
-                              colors,
-                              envelops[i],
-                              isDeposit: false,
-                            ),
-                            onHistory: () =>
-                                _openHistory(context, colors, envelops[i]),
-                            onDelete: () =>
-                                _confirmDelete(context, colors, envelops[i]),
                           ),
-                        ),
-                ),
-              ],
+                  ),
+                ],
+              ),
             );
           },
         ),

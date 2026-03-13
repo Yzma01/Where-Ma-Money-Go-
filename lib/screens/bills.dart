@@ -137,81 +137,92 @@ class _BillsScreenState extends State<BillsScreen> {
   Widget build(BuildContext context) {
     final colors = context.watch<ThemeProvider>().colors;
 
-    return Scaffold(
-      backgroundColor: colors.background,
-      body: SafeArea(
-        child: BlocBuilder<BillsBloc, BillsState>(
-          builder: (context, state) {
-            if (state is BillsLoading) {
-              return Center(
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  color: colors.primary,
-                ),
-              );
-            }
+    return RefreshIndicator(
+      color: colors.primary,
+      backgroundColor: colors.surface,
+      onRefresh: () async => context.read<BillsBloc>().add(LoadBills()),
 
-            if (state is BillsError) {
-              return _ErrorView(colors: colors, message: state.message);
-            }
-
-            final allBills = state is BillsLoaded ? state.bills : <Bill>[];
-            final filtered = _applyFilters(allBills);
-
-            // Categorías únicas para el filtro
-            final categories = allBills.map((b) => b.category).toSet().toList();
-
-            return Column(
-              children: [
-                _Header(
-                  colors: colors,
-                  filterCount: _activeFilterCount,
-                  onFilter: () => _openFilterSheet(context, categories),
-                ),
-                if (_hasActiveFilters)
-                  _ActiveFiltersBar(
-                    colors: colors,
-                    selectedCategory: _selectedCategory,
-                    selectedSubcategory: _selectedSubcategory, // ← nuevo
-                    selectedMonth: _selectedMonth,
-                    fromDate: _fromDate,
-                    toDate: _toDate,
-                    onClear: _clearFilters,
+      child: Scaffold(
+        backgroundColor: colors.background,
+        body: SafeArea(
+          child: BlocBuilder<BillsBloc, BillsState>(
+            builder: (context, state) {
+              if (state is BillsLoading) {
+                return Center(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: colors.primary,
                   ),
-                Expanded(
-                  child: filtered.isEmpty
-                      ? _EmptyView(
-                          colors: colors,
-                          hasFilters: _hasActiveFilters,
-                          onClear: _clearFilters,
-                        )
-                      : ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
-                          itemCount: filtered.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 10),
-                          itemBuilder: (_, i) =>
-                              BillCard(bill: filtered[i], colors: colors),
-                        ),
-                ),
-              ],
-            );
-          },
+                );
+              }
+
+              if (state is BillsError) {
+                return _ErrorView(colors: colors, message: state.message);
+              }
+
+              final allBills = state is BillsLoaded ? state.bills : <Bill>[];
+              final filtered = _applyFilters(allBills);
+
+              // Categorías únicas para el filtro
+              final categories = allBills
+                  .map((b) => b.category)
+                  .toSet()
+                  .toList();
+
+              return Column(
+                children: [
+                  _Header(
+                    colors: colors,
+                    filterCount: _activeFilterCount,
+                    onFilter: () => _openFilterSheet(context, categories),
+                  ),
+                  if (_hasActiveFilters)
+                    _ActiveFiltersBar(
+                      colors: colors,
+                      selectedCategory: _selectedCategory,
+                      selectedSubcategory: _selectedSubcategory, // ← nuevo
+                      selectedMonth: _selectedMonth,
+                      fromDate: _fromDate,
+                      toDate: _toDate,
+                      onClear: _clearFilters,
+                    ),
+                  Expanded(
+                    child: filtered.isEmpty
+                        ? _EmptyView(
+                            colors: colors,
+                            hasFilters: _hasActiveFilters,
+                            onClear: _clearFilters,
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+                            itemCount: filtered.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (_, i) =>
+                                BillCard(bill: filtered[i], colors: colors),
+                          ),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => AddBillScreen()),
-        ),
-        backgroundColor: colors.primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        icon: const Icon(Icons.add_rounded, size: 22),
-        label: const Text(
-          'Nuevo',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => AddBillScreen()),
+          ),
+          backgroundColor: colors.primary,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          icon: const Icon(Icons.add_rounded, size: 22),
+          label: const Text(
+            'Nuevo',
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+          ),
         ),
       ),
     );

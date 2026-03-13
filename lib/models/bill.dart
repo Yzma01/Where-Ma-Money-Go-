@@ -11,8 +11,6 @@ class Bill {
   String? id;
   final String type;
   final String cashFlow;
-
-  /// ID del Saving asociado (solo cuando la categoría es "ahorro")
   final String? savingId;
 
   Bill({

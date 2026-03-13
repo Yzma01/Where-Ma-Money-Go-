@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/rendering.dart';
 import 'package:where_ma_money_go/models/saving.dart';
 
@@ -14,7 +13,8 @@ class SavingRepository {
     return _firestore.collection('users').doc(uid).collection('savings');
   }
 
-  Future<dynamic> getSavings() async {
+  // ✅ Cambiado de Future<dynamic> a Future<List<Saving>>
+  Future<List<Saving>> getSavings() async {
     try {
       final snapshot = await _savings
           .orderBy('dueDate', descending: true)
